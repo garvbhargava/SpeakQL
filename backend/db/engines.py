@@ -25,16 +25,25 @@ from app.config import Settings
 
 
 def _build(dsn: str, *, read_only: bool, timeout_ms: int | None, label: str) -> Engine:
-    engine = create_engine(
-        dsn,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=5,
-        future=True,
-        connect_args={"application_name": f"speakql:{label}"},
-    )
+    # Postgres is the production database. SQLite appears only in
+    # tests/test_api.py, which drives the real app without a container -- and
+    # it supports neither connection pooling options nor the two server
+    # settings below, so both are applied conditionally rather than guarded at
+    # every call site.
+    is_postgres = dsn.startswith("postgresql")
 
-    if read_only or timeout_ms:
+    options: dict = {"future": True}
+    if is_postgres:
+        options.update(
+            pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=5,
+            connect_args={"application_name": f"speakql:{label}"},
+        )
+
+    engine = create_engine(dsn, **options)
+
+    if is_postgres and (read_only or timeout_ms):
         @event.listens_for(engine, "connect")
         def _configure(dbapi_conn, _record):  # noqa: ANN001
             cur = dbapi_conn.cursor()
