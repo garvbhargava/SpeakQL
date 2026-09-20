@@ -1,0 +1,29 @@
+# SpeakQL backend · pinned, because a reproduction note that says "latest" is
+# not a reproduction note. Versions current at the start of the build.
+
+# --- web ---------------------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- database ----------------------------------------------------------------
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+
+# --- safety: the AST validator. Nothing else decides whether SQL may run. ----
+sqlglot==26.0.1
+
+# --- auth --------------------------------------------------------------------
+PyJWT==2.10.1
+argon2-cffi==23.1.0
+
+# --- models (added in build phases 3 and 5) ----------------------------------
+# sentence-transformers==3.3.1
+# faiss-cpu==1.9.0
+# torch==2.5.1
+# transformers==4.47.1
+
+# --- tests -------------------------------------------------------------------
+pytest==8.3.4
+httpx==0.28.1

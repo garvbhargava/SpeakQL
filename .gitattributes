@@ -1,0 +1,21 @@
+# Normalise line endings. Developed on Windows, runs in Linux containers.
+* text=auto eol=lf
+
+# These MUST be LF or they break inside the container: bash refuses a script
+# with CRLF line endings ("bad interpreter: no such file or directory"), and
+# Docker mangles CRLF in a Dockerfile.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+Makefile    text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sql       text eol=lf
+*.py        text eol=lf
+
+# Binary: never touch
+*.png       binary
+*.jpg       binary
+*.pdf       binary
+*.pt        binary
+*.bin       binary
+*.safetensors binary
