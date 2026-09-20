@@ -1,0 +1,35 @@
+# secrets — never commit a real one
+.env
+*.pem
+*.key
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# models and data — too big for git, and reproducible from scripts
+ml/checkpoints/
+ml/runs/
+data/spider/
+data/*.faiss
+data/*.index
+*.pt
+*.bin
+*.safetensors
+
+# node (frontend / full-stack branches)
+node_modules/
+dist/
+.vite/
+
+# editors and os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
