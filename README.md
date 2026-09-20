@@ -9,7 +9,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![sqlglot](https://img.shields.io/badge/validator-sqlglot-8A2BE2)](https://github.com/tobymao/sqlglot)
-[![Build phase](https://img.shields.io/badge/build%20phase-1%20of%208-E3A55C)](#roadmap)
+[![Gemma](https://img.shields.io/badge/LLM-gemma3%3A4b-4A9EFF)](https://ollama.com/library/gemma3)
+[![Tests](https://img.shields.io/badge/tests-100%20passing-3FD68B)](#testing)
 
 `Backend` · [`Frontend`](../../tree/Frontend) · [`Full-Stack`](../../tree/Full-Stack) · [`main`](../../tree/main)
 
@@ -24,8 +25,8 @@
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
+- [API](#api)
 - [Configuration](#configuration)
-- [Usage](#usage)
 - [Security model](#security-model)
 - [Testing](#testing)
 - [Project structure](#project-structure)
@@ -39,20 +40,25 @@
 
 SpeakQL converts a plain-English business question into SQL, refuses anything
 that is not a single read-only `SELECT`, runs it under a database account that
-can only read, and returns the number, a chart, an explanation, and the SQL
-that produced it.
+can only read, and returns the number, a chart, an explanation and the SQL that
+produced it.
 
-This branch holds the **backend only** — the API, the database layer, the
-safety layers and the models. The interface is on `Frontend`.
+This branch holds the **backend only** — the API, the database layer, the four
+safety layers and the model interfaces. The interface lives on `Frontend`.
 
 **The problem.** Querying a warehouse requires SQL, so business teams depend on
 a small pool of analysts for routine reporting. Each ad-hoc request costs an
 analyst 2–4 hours and waits 1–2 days in a queue.
 
 **The approach.** Two models fine-tuned in-house — a schema-retrieval
-bi-encoder and a text-to-SQL generator — with a local LLM as the fallback
-generator and the explainer. A deterministic AST parser, never a model, decides
-whether a query is allowed to run.
+bi-encoder and a text-to-SQL generator — with Gemma as the fallback generator
+and the explainer. A deterministic AST parser, never a model, decides whether a
+query may run.
+
+> **Gemma generates and explains. sqlglot decides.**
+> The safety decision is identical whether the SQL came from CodeT5, from
+> Gemma, or from a person typing it by hand — because a parser can be read and
+> tested, and a model can only be sampled.
 
 ---
 
@@ -63,9 +69,13 @@ whether a query is allowed to run.
 | **Four safety layers** | Intent gatekeeper → AST validator → database role → edit validator |
 | **Read-only by construction** | Enforced at the grant, at the connection, and before execution |
 | **Multi-tenant isolation** | Company domains and personal workspaces, with a null-domain guarantee |
-| **Two-axis permissions** | Product role (owner/member) × database role (analyst/viewer) on each grant |
+| **Two-axis permissions** | Product role (owner/member) × database role (analyst/viewer) per grant |
+| **Object-level authorisation** | Every id resolved to its owner; a guessed id is indistinguishable from a missing one |
 | **Correction workflow** | Owners write the real table; members propose through an overlay and a merge queue |
-| **Honest measurement** | `query_log` gets a row on every path — answered, refused, blocked and failed alike |
+| **Staleness refusal** | A merge whose row moved is refused, not applied — this was a real data-loss bug |
+| **Prompt-injection defence** | Warehouse values are fenced as data; explainer output cannot act |
+| **SSRF defence** | External hosts are *resolved* then judged — the address, never the string |
+| **Honest measurement** | `query_log` gets a row on every path: answered, refused, blocked, failed |
 
 ---
 
@@ -74,34 +84,39 @@ whether a query is allowed to run.
 ```
 question
    │
+   ▼  layer 1 · intent gatekeeper — runs BEFORE generation
+┌──────────────────┐
+│ question_handler │  credentials? destruction? injection? → refuse, no SQL exists
+└──────────────────┘
+   │
    ▼
 ┌──────────────────┐   retrieval    ┌─────────────────────────────┐
-│  schema_retriever│ ─────────────► │  MiniLM bi-encoder + FAISS  │
+│ schema_retriever │ ─────────────► │  MiniLM bi-encoder + FAISS  │
 └──────────────────┘                └─────────────────────────────┘
-   │  only the relevant tables
+   │  only the relevant tables — never the whole schema
    ▼
 ┌──────────────────┐   generation   ┌─────────────────────────────┐
 │  sql_generator   │ ─────────────► │  CodeT5  ·  Gemma fallback  │
 └──────────────────┘                └─────────────────────────────┘
    │  candidate SQL + confidence
-   ▼
+   ▼  layer 2 · AST validator — the model is never consulted
 ┌──────────────────┐
-│  validator       │  sqlglot AST · single read-only SELECT · permitted tables only
+│    validator     │  single read-only SELECT · permitted tables only · sqlglot
 └──────────────────┘
-   │  accepted
-   ▼
+   │
+   ▼  router — confidence chooses the GENERATOR, never whether it may run
 ┌──────────────────┐
-│  executor        │  runs under speakql_ro · 10 s timeout · row cap
+│     router       │  ≥ 0.55 keep it  ·  below, escalate and validate again
+└──────────────────┘
+   │
+   ▼  layer 3 · the database role itself
+┌──────────────────┐
+│    executor      │  speakql_ro · read-only transaction · 10 s timeout · row cap
 └──────────────────┘
    │
    ▼
-answer + chart + explanation + the SQL
+answer + chart + explanation + the SQL   →   query_log
 ```
-
-**Gemma generates and explains. sqlglot decides.** The safety decision is
-identical whether the SQL came from CodeT5, from Gemma, or from a person typing
-it by hand — because a parser can be read and tested, and a model can only be
-sampled.
 
 ---
 
@@ -110,13 +125,13 @@ sampled.
 | Layer | Choice | Why |
 |---|---|---|
 | API | FastAPI + Uvicorn | Async, typed, generates the OpenAPI contract |
-| Database | PostgreSQL 15 | Role-level privilege separation is the safety model |
-| ORM / SQL | SQLAlchemy 2 + psycopg 3 | One engine per database role |
+| Database | PostgreSQL 15 | Role-level privilege separation *is* the safety model |
+| ORM | SQLAlchemy 2 + psycopg 3 | One engine per database role |
 | Validation | **sqlglot** | Parses to an AST; never pattern-matches SQL text |
 | Retrieval | sentence-transformers + FAISS | 22M-parameter bi-encoder, cosine over columns |
 | Generation | CodeT5-small, fine-tuned | 60M parameters, trained in-house |
-| Fallback LLM | Gemma `gemma3:4b` via Ollama | Local, open-weight, never used for safety |
-| Auth | PyJWT + Argon2 | Passwordless: six-digit codes, no password anywhere |
+| Fallback LLM | Gemma `gemma3:4b` via Ollama | Local, open-weight, **never used for safety** |
+| Auth | PyJWT + HMAC-SHA256 OTP | Passwordless: six-digit codes, no password anywhere |
 
 ---
 
@@ -148,9 +163,9 @@ curl http://localhost:8000/health
 ```json
 {
   "status": "ok",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "databases": { "meta": "ok", "read": "ok", "write": "ok", "edits": "ok", "uploads": "ok" },
-  "llm": { "mode": "local", "model": "gemma3:4b" }
+  "llm": { "mode": "local", "model": "gemma3:4b", "reachable": "yes" }
 }
 ```
 
@@ -165,6 +180,44 @@ make up-local     # adds the llm container
 make pull-model   # ~3 GB, once
 ```
 
+Without it the API still starts, still answers `/health`, and the explainer
+falls back to a deterministic sentence — a backend that refused to boot without
+a 3 GB download would make the whole demo hostage to it.
+
+### Signing in during development
+
+There is no password. `make logs` prints the six-digit code:
+
+```
+speakql.mail: SIGN-IN CODE for you@company.com is 418902
+```
+
+---
+
+## API
+
+25 routes. Full OpenAPI at `http://localhost:8000/docs`.
+
+| Method | Route | What |
+|---|---|---|
+| `POST` | `/api/auth/start` | Send a code, and say what signing in will do |
+| `POST` | `/api/auth/verify` | Check the code; create or join |
+| `POST` | `/api/auth/refresh` | Exchange a refresh token |
+| `GET` | `/api/auth/me` | Session identity |
+| `POST` | **`/api/ask`** | The twelve steps, end to end |
+| `GET` | `/api/org` · `/api/org/people` | Organisation and its people |
+| `POST` | `/api/org/invite` | Single-use, expiring, role-fixing invitation |
+| `POST` | `/api/org/people/{id}/approve` | The owner decides who is in |
+| `POST` `DELETE` | `/api/org/people/{id}/grants` | Grant and revoke per database |
+| `GET` `POST` | `/api/connections` | List and register external databases |
+| `POST` | `/api/datasets/plan` · `/load` | Upload: say what would happen, then do it |
+| `POST` | `/api/rows/edit` | Correct a value (owner writes; member proposes) |
+| `GET` `POST` | `/api/merges` | The merge queue, with the staleness check |
+| `GET` | `/api/schema/{id}` · `/api/threads` | Schema and conversation history |
+
+`/api/ask` returns one of **five shapes**, so the interface renders each
+differently: `answer`, `clarify`, `blocked`, `refusal`, `failure`.
+
 ---
 
 ## Configuration
@@ -176,7 +229,7 @@ harder to find.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SECRET_KEY` | — | **required.** JWT signing |
+| `SECRET_KEY` | — | **required.** JWT signing and OTP hashing |
 | `META_DSN` | — | **required.** Application's own data |
 | `RO_DSN` | — | **required.** Every read |
 | `WRITE_DSN` | — | **required.** The edit path |
@@ -184,33 +237,16 @@ harder to find.
 | `UPLOADS_DSN` | — | **required.** File ingestion |
 | `LLM_MODE` | `local` | `local` or `hosted` |
 | `LLM_MODEL` | `gemma3:4b` | The only place a model is named |
-| `CONFIDENCE_THRESHOLD` | `0.55` | Below this, escalate to Gemma |
+| `CONFIDENCE_THRESHOLD` | `0.55` | Below this, escalate to the fallback |
 | `FREE_EMAIL_MODE` | `personal_workspace` | `personal_workspace`, `invite_only`, `blocked` |
 | `STATEMENT_TIMEOUT_MS` | `10000` | Hard stop on any query |
 | `MAX_ROWS` | `5000` | Row cap |
 
 > **`SPEAKQL_OWNER_DSN` is deliberately absent from `Settings`.**
 > `speakql_owner` can create databases and roles; the API must never hold it.
-> An accidental `settings.owner_dsn` fails at import rather than at runtime.
-> `bootstrap.sh` reads it straight from the environment.
-
-See [`.env.example`](backend/.env.example) for the complete list.
-
----
-
-## Usage
-
-```bash
-make help              # list every target
-make up                # postgres + api
-make up-local          # postgres + api + Gemma
-make bootstrap         # databases, roles, warehouses, seed
-make test              # whole suite
-make test-privileges   # the six assertions
-make logs              # follow the api
-make down              # stop, keep data
-make clean             # stop and DELETE the volume
-```
+> An accidental `settings.owner_dsn` fails at *import*, not at runtime.
+> `bootstrap.sh` reads it straight from the environment, and a test asserts
+> that no field on `Settings` could ever hold it.
 
 ---
 
@@ -229,11 +265,26 @@ make clean             # stop and DELETE the volume
 ### Read-only, enforced three times
 
 1. **At the grant** — `speakql_ro` is granted `SELECT` and nothing else.
-2. **At the connection** — the read engine sets
-   `default_transaction_read_only`, so the server refuses a write even if a
-   grant were wrong.
+2. **At the connection** — the read engine sets `default_transaction_read_only`,
+   so the server refuses a write even if a grant were wrong.
 3. **Before execution** — an sqlglot AST parse rejects anything that is not a
    single read-only `SELECT` over permitted tables.
+
+### What the validator catches that a word-list does not
+
+```sql
+SELECT 1 FROM orders; DROP TABLE orders          -- two statements
+WITH gone AS (DELETE FROM orders RETURNING *)    -- a write inside a CTE,
+SELECT * FROM gone                               --   wrapped in a SELECT
+SELECT * INTO copied FROM orders                 -- a SELECT that creates a table
+SELECT * FROM orders FOR UPDATE                  -- a SELECT that takes locks
+/* harmless */ DROP /* c */ TABLE orders         -- comments between keywords
+SELECT * FROM pg_catalog.pg_user                 -- the system catalogue
+SELECT pg_read_file('/etc/passwd')               -- a function with side effects
+SELECT * FROM other_tenant.payroll               -- another organisation
+```
+
+Every one of those is in [`tests/test_validator.py`](backend/tests/test_validator.py).
 
 ### Tenant isolation
 
@@ -241,18 +292,35 @@ A company is identified by its email domain. A free-mail signup gets a
 **personal workspace**: an organisation row with `kind = 'personal'` and
 `domain` **NULL**. The resolver asks `WHERE domain = ? AND kind = 'company'`,
 and a null never equals anything — so a personal workspace is unreachable by
-domain, permanently. Two people on `gmail.com` get two separate tenants.
+domain, permanently. Two people on `gmail.com` get two separate tenants, and a
+test asserts exactly that.
+
+### Object-level authorisation
+
+Grants answer *may this person use this database*. They do not answer *is this
+message theirs*. Every identifier is resolved to its owner, and **a guessed id
+returns the same response as one that does not exist** — same status, same
+message. A 404/403 split would be an oracle for mapping the system.
 
 ---
 
 ## Testing
 
 ```bash
-make test-privileges
+make test               # the whole suite
+make test-privileges    # the six §17 assertions, against a live database
 ```
 
-These run against a live database and ask Postgres itself, which cannot be
-argued with.
+**100 tests run without a database**, so the safety surface can be checked
+anywhere:
+
+| Suite | Covers |
+|---|---|
+| `test_validator.py` | 56 cases — every statement above, plus viewer restrictions, nesting, limits, and that it never raises on hostile input |
+| `test_security.py` | SSRF, prompt-injection fencing, and the write path |
+| `test_api.py` | The real app end to end: auth, tenant isolation, token-kind confusion, layer 1 |
+
+And **six that only Postgres can answer**, which need the container:
 
 | # | Assertion |
 |---|---|
@@ -263,14 +331,11 @@ argued with.
 | 5 | The overlay role holds **nothing** on `public` |
 | 6 | No runtime role can create a database or a role |
 
-A seventh checks the same idea one layer up: `Settings` has no field for the
-owner DSN, so the API cannot construct a privileged connection by accident.
-
 **Two tenants, on purpose.** `bootstrap.sh` creates `northwind_dw` *and*
-`trellis_dw`. Isolation cannot be tested against one database. The seed is also
-deliberately imperfect — three rows in `shipments` have no `units`, because the
-*incomplete* answer mode and the correction workflow need real missing values;
-`21_seed.sql` raises if those gaps go missing.
+`trellis_dw` — isolation cannot be tested against one database. The seed is
+deliberately imperfect too: three rows in `shipments` have no `units`, because
+the *incomplete* answer mode and the correction workflow need real missing
+values. `21_seed.sql` raises if those gaps go missing.
 
 ---
 
@@ -279,27 +344,28 @@ deliberately imperfect — three rows in `shipments` have no `units`, because th
 ```
 SpeakQL/
 ├── backend/
-│   ├── app/          main.py · config.py · deps · rbac · object_access · ratelimit
-│   ├── api/          route modules; schemas.py is the single source of the contract
-│   ├── auth/         OTP, JWT, domain resolution, invitations
-│   ├── core/         retrieval → generation → validation → routing → execution
-│   ├── db/           engines.py (one per role) · entities · introspection
-│   ├── logs/         query_log · edit_log · audit_log · notifications
-│   ├── sql/          roles · metadata schema · warehouse DDL · seed
-│   ├── scripts/      bootstrap.sh
-│   ├── tests/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── Makefile
-├── .gitignore
+│   ├── app/       main · config · deps · rbac · object_access · ratelimit · mailer
+│   ├── api/       routes_ask · routes_org · routes_connections · routes_datasets
+│   │              routes_merges · routes_misc · schemas.py (the API contract)
+│   ├── auth/      routes · otp · jwt_handler · domain_resolver · public_domains
+│   ├── core/      question_handler · context_resolver · schema_retriever
+│   │              sql_generator · validator · edit_validator · router · executor
+│   │              merge · visualiser · explainer · llm_client · file_ingest
+│   ├── db/        engines · entities · session · introspect · edits_engine · host_guard
+│   ├── logs/      query_log · edit_log · audit_log
+│   ├── sql/       00_roles · 10_meta · 20_warehouse · 21_seed
+│   ├── scripts/   bootstrap.sh
+│   └── tests/
+├── .gitattributes · .gitignore
 └── README.md
 ```
 
-**Two rules about this tree**
+**Three rules about this tree**
 
 - `validator.py` and `edit_validator.py` are the **only** places safety rules
   live. A check anywhere else is a bug, not a second layer.
 - `executor.py` receives an **engine, never a DSN**, and cannot construct one.
+- Each of the three logs has **exactly one writer**.
 
 > **Naming note.** Backend Plan §15 calls the log package `logging/`. That name
 > shadows Python's standard library and breaks every `import logging` in the
@@ -309,16 +375,21 @@ SpeakQL/
 
 ## Roadmap
 
+Build weeks 1–7 are the mid-term presentation; weeks 8–10 are the end-term.
+
 | Phase | Deliverable | Status |
 |:---:|---|:---:|
-| 1 | Foundation — compose, config, engines, warehouse, roles, privilege assertions | ✅ |
+| 1 | Foundation — compose, config, engines, roles, privilege assertions | ✅ |
 | 2 | Synthetic pair generation — *the critical path* | ⏳ |
-| 3 | Model A — MiniLM retriever + FAISS index | ⬜ |
-| 4 | Auth, grants, object access; freeze the API contract | ⬜ |
+| 3 | Model A — MiniLM retriever + FAISS (lexical baseline in place) | ⏳ |
+| 4 | Auth, grants, object access, API contract | ✅ |
 | 5 | Model B — CodeT5 generator | ⬜ |
-| 6 | Validator, router, executor, `/api/ask` | ⬜ |
-| 7 | Corrections — owner path, member overlay, merge requests | ⬜ |
-| 8 | File ingestion and external connections | ⬜ |
+| 6 | Validator, router, executor, `/api/ask` | ✅ |
+| 7 | Corrections — owner path, member overlay, merge + staleness | ✅ |
+| 8 | File ingestion and external connections | ✅ |
+
+**Deferred to weeks 8–10 by design:** SSE streaming, voice input, CSV and
+report export, the evaluation harness and the ablation table.
 
 Order and rationale: `SpeakQL Build Plan.pdf` on the `documentation` branch.
 
