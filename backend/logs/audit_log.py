@@ -33,6 +33,7 @@ class Action(str, Enum):
     # things people do
     ORG_CREATED = "org.created"
     PERSON_INVITED = "person.invited"
+    INVITATION_REDEEMED = "invitation.redeemed"
     PERSON_APPROVED = "person.approved"
     PERSON_SUSPENDED = "person.suspended"
     GRANT_ADDED = "grant.added"

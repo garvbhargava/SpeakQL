@@ -16,12 +16,11 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from api import schemas
 from app.deps import EnginesDep, LimiterDep, OwnerDep, SessionDep
 from app.ratelimit import Limited
-from app.rbac import Denied
 from core import file_ingest
 from db.entities import Connection, UploadedDataset
 from db.introspect import introspect
@@ -79,16 +78,18 @@ async def load_upload(
     limiter: LimiterDep,
     file: UploadFile = File(...),
     table_name: str = Form(...),
-    connection_id: int = Form(...),
 ) -> dict:
-    """Create the table, load the rows, then reindex — in that order."""
+    """Create the table, load the rows, then reindex — in that order.
+
+    No connection id is accepted from the form. Uploads always land in the
+    caller's own organisation's upload connection, found or created here, so
+    there is no field through which an upload could be pointed elsewhere.
+    """
     decision = limiter.check(principal.person_id, Limited.UPLOAD)
     if not decision.allowed:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, decision.message)
 
-    connection = session.get(Connection, connection_id)
-    if connection is None or connection.org_id != principal.org_id:
-        raise Denied("no such database, or it is not yours")
+    connection = _uploads_connection(session, principal.org_id)
 
     raw = await _read_bounded(file)
     safe_name, _ = file_ingest.sanitise(table_name, set())
@@ -118,6 +119,7 @@ async def load_upload(
         next(reader, None)   # header
 
         names = [c.name for c in plan.columns]
+        types = [c.data_type for c in plan.columns]
         placeholders = ", ".join(f":{n}" for n in names)
         quoted = ", ".join(f'"{n}"' for n in names)
         insert = text(
@@ -128,7 +130,7 @@ async def load_upload(
         batch: list[dict] = []
         for row in reader:
             values = {
-                name: (row[i] if i < len(row) and row[i] != "" else None)
+                name: file_ingest.coerce(row[i] if i < len(row) else None, types[i])
                 for i, name in enumerate(names)
             }
             batch.append(values)
@@ -139,6 +141,14 @@ async def load_upload(
         if batch:
             conn.execute(insert, batch)
             loaded += len(batch)
+
+        # The read role can use this organisation's schema and read this
+        # table -- and the validator, checking against this organisation's
+        # registry, is what stops it reaching any other organisation's.
+        conn.execute(text(f'GRANT USAGE ON SCHEMA "{schema}" TO speakql_ro'))
+        conn.execute(text(
+            f'GRANT SELECT ON "{schema}"."{plan.table_name}" TO speakql_ro'
+        ))
 
     dataset = UploadedDataset(
         connection_id=connection.id,
@@ -153,7 +163,11 @@ async def load_upload(
 
     # Stage five. The table is queryable when this response returns -- there
     # is no manual reindex step, and the demonstration script depends on that.
-    result = introspect(session, engines.uploads, connection.id)
+    # Read with this connection's own read engine, and ONLY this
+    # organisation's schema: introspecting the whole shared uploads database
+    # would put other organisations' table names into this registry.
+    result = introspect(session, engines.tenants.read(connection), connection.id,
+                        only_schemas=(schema,))
 
     audit_log.write(session, action=audit_log.Action.DATASET_UPLOADED,
                     person_id=principal.person_id, org_id=principal.org_id,
@@ -168,6 +182,22 @@ async def load_upload(
         "reindexed": result.summary,
         "queryable_now": True,
     }
+
+
+def _uploads_connection(session, org_id: int) -> Connection:
+    """The organisation's upload connection, created the first time it is
+    needed. One per organisation; its tables live in schema org_<id>."""
+    connection = session.scalar(select(Connection).where(
+        Connection.org_id == org_id, Connection.kind == "uploaded"
+    ))
+    if connection is None:
+        connection = Connection(
+            org_id=org_id, name="Uploads", kind="uploaded",
+            database_name="speakql_uploads",
+        )
+        session.add(connection)
+        session.flush()
+    return connection
 
 
 async def _read_bounded(file: UploadFile) -> bytes:

@@ -11,22 +11,31 @@ it the one place SSRF can enter. Four checks, reported **one at a time**:
 "Connection failed" is the least useful message a form can give, so each check
 returns its own line and a refusal names which one fired. The three that did
 not run are reported as not run — never as passed.
+
+Two rules about the address, both learned from bugs in the first version:
+the URL is built from its parts and never pasted together (a password could
+otherwise carry a different host), and the connection goes to the exact
+address that was judged (the name could otherwise resolve somewhere else a
+second time). Both live in db/host_guard.py.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from api import schemas
-from app.deps import EnginesDep, OwnerDep, PrincipalDep, SessionDep
+from app.deps import EnginesDep, OwnerDep, PrincipalDep, SessionDep, SettingsDep
 from app.rbac import Denied
+from db.crypto import seal
 from db.entities import Connection, SchemaColumn
-from db.host_guard import check_host, require_tls
+from db.host_guard import check_host, external_url, pin
 from db.introspect import introspect
+from db.tenant_engine import ConnectionUnavailable
 from logs import audit_log
 
 log = logging.getLogger("speakql.connections")
@@ -48,11 +57,6 @@ def list_connections(principal: PrincipalDep,
 
     out: list[schemas.ConnectionOut] = []
     for row in rows:
-        tables = session.scalar(
-            select(SchemaColumn.table_name)
-            .where(SchemaColumn.connection_id == row.id)
-            .distinct()
-        )
         count = len(set(session.scalars(
             select(SchemaColumn.table_name)
             .where(SchemaColumn.connection_id == row.id).distinct()
@@ -67,7 +71,8 @@ def list_connections(principal: PrincipalDep,
 
 @router_api.post("", response_model=schemas.ConnectionResult)
 def register(body: schemas.RegisterConnection, principal: OwnerDep,
-             session: SessionDep, engines: EnginesDep) -> schemas.ConnectionResult:
+             session: SessionDep, engines: EnginesDep,
+             settings: SettingsDep) -> schemas.ConnectionResult:
     checks: list[schemas.ConnectionCheck] = []
 
     def not_run(*names: str) -> None:
@@ -92,15 +97,16 @@ def register(body: schemas.RegisterConnection, principal: OwnerDep,
         )
 
     # --- 2/3/4. TLS, a test query, and the account's privileges ------------
-    dsn = require_tls(
-        f"postgresql+psycopg://{body.username}:{body.password}"
-        f"@{body.host}:{body.port}/{body.database_name}"
-    )
+    # From parts, then pinned to the address check_host just judged.
+    pinned = pin(external_url(
+        username=body.username, password=body.password,
+        host=body.host, port=body.port, database=body.database_name,
+    ), verdict)
     checks.append(schemas.ConnectionCheck(
         check="tls", passed=True, detail="sslmode=require",
     ))
 
-    probe = create_engine(dsn, connect_args={"connect_timeout": TEST_TIMEOUT},
+    probe = create_engine(pinned, connect_args={"connect_timeout": TEST_TIMEOUT},
                           pool_pre_ping=False)
     try:
         with probe.connect() as conn:
@@ -109,14 +115,37 @@ def register(body: schemas.RegisterConnection, principal: OwnerDep,
                 check="query", passed=True, detail="SELECT 1 returned",
             ))
 
+            # Checking role_table_grants alone is the mistake: it lists only
+            # DIRECT grants, so a superuser shows none, and neither does an
+            # account that inherits write access through a role it belongs to.
+            # has_table_privilege resolves inheritance; the role flags catch
+            # the accounts that bypass table privileges entirely.
+            elevated = conn.execute(text(
+                "SELECT rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb "
+                "FROM pg_roles WHERE rolname = current_user"
+            )).scalar_one_or_none()
+
             writable = conn.execute(text(
-                "SELECT count(*) FROM information_schema.role_table_grants "
-                "WHERE grantee = current_user "
-                "AND privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE')"
+                "SELECT count(*) FROM information_schema.tables t "
+                "WHERE t.table_schema NOT IN ('pg_catalog','information_schema') "
+                "AND t.table_type = 'BASE TABLE' AND ("
+                "  has_table_privilege(current_user, "
+                "    quote_ident(t.table_schema)||'.'||quote_ident(t.table_name), 'INSERT') OR "
+                "  has_table_privilege(current_user, "
+                "    quote_ident(t.table_schema)||'.'||quote_ident(t.table_name), 'UPDATE') OR "
+                "  has_table_privilege(current_user, "
+                "    quote_ident(t.table_schema)||'.'||quote_ident(t.table_name), 'DELETE') OR "
+                "  has_table_privilege(current_user, "
+                "    quote_ident(t.table_schema)||'.'||quote_ident(t.table_name), 'TRUNCATE'))"
             )).scalar_one()
 
-            if writable:
-                detail = f"this account holds {writable} write privileges"
+            if elevated or writable:
+                detail = (
+                    "this account is a superuser or can manage roles"
+                    if elevated else
+                    f"this account can write to {writable} table"
+                    f"{'s' if writable != 1 else ''}"
+                )
                 checks.append(schemas.ConnectionCheck(
                     check="privileges", passed=False, detail=detail,
                 ))
@@ -154,18 +183,29 @@ def register(body: schemas.RegisterConnection, principal: OwnerDep,
     connection = Connection(
         org_id=principal.org_id, name=body.name, kind="external",
         host=body.host, port=body.port, database_name=body.database_name,
-        secret_cipher=None,   # encryption at rest wired with the KMS choice
+        # Only the two secrets are sealed; host, port and database are columns.
+        # Encrypted at rest; decrypted only in db/tenant_engine.py, at the
+        # moment an engine is built. Never returned by any endpoint.
+        secret_cipher=seal(settings.secret_key, json.dumps(
+            {"username": body.username, "password": body.password}
+        )),
     )
     session.add(connection)
     session.flush()
 
     # Reindex is the last stage, not a separate chore: the database is
-    # queryable the moment this response returns.
-    registered = create_engine(dsn, pool_pre_ping=True)
+    # queryable the moment this response returns. Through the same tenant
+    # engine every later question will use -- read-only, under a timeout.
     try:
-        introspect(session, registered, connection.id)
-    finally:
-        registered.dispose()
+        introspect(session, engines.tenants.read(connection), connection.id)
+    except (ConnectionUnavailable, SQLAlchemyError) as exc:
+        engines.tenants.forget(connection.id)
+        session.delete(connection)
+        session.flush()
+        return schemas.ConnectionResult(
+            accepted=False, checks=checks,
+            refused_because=f"connected, but its tables could not be read: {_readable(exc)}",
+        )
 
     audit_log.write(session, action=audit_log.Action.CONNECTION_ADDED,
                     person_id=principal.person_id, org_id=principal.org_id,
@@ -188,8 +228,24 @@ def reindex(connection_id: int, principal: OwnerDep, session: SessionDep,
     connection = session.get(Connection, connection_id)
     if connection is None or connection.org_id != principal.org_id:
         raise Denied("no such database, or it is not yours")
-    result = introspect(session, engines.read, connection_id)
+    # This connection's own engine -- the first version introspected one
+    # fixed warehouse here whatever connection was named.
+    try:
+        engine = engines.tenants.read(connection)
+    except ConnectionUnavailable as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    result = introspect(session, engine, connection_id,
+                        only_schemas=_schemas_for(connection))
     return {"reindexed": connection.name, "summary": result.summary}
+
+
+def _schemas_for(connection) -> tuple[str, ...] | None:
+    """An uploaded connection's tables live in its organisation's own schema
+    inside a database every organisation's uploads share. Introspecting any
+    wider would put another organisation's table names in this registry."""
+    if connection.kind == "uploaded":
+        return (f"org_{connection.org_id}",)
+    return None
 
 
 def _readable(exc: Exception) -> str:

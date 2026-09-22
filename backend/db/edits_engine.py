@@ -1,30 +1,33 @@
-"""Member overlays and their read-back views (Backend Plan §10.4).
+"""Member overlays: where a pending correction lives (Backend Plan §10.4).
 
 Revision 4 promised that a member's pending value "appears in their own
-answers" and never said how. This is how.
+answers" and never said how. This is the storage half; the read half is
+`core/executor.rewrite_for_overlay`.
 
-For each member with pending corrections on a table, one view:
+**One small table per member per corrected table**, inside the warehouse's
+`member_edits` schema:
 
-    CREATE VIEW member_edits.p42_shipments AS
-    SELECT s.shipment_id,
-           COALESCE(e.units::integer, s.units) AS units,
-           ...
-    FROM public.shipments s
-    LEFT JOIN member_edits.p42_shipments_rows e
-           ON e.pk_value = s.shipment_id::text
+    member_edits.p42_shipments      (pk_value, column_name, after_value)
 
-The executor points that member's reads at the view (see
-`core/executor.rewrite_for_overlay`), so *their* answers include *their*
-pending values and nobody else's answers change at all.
+It holds only that member's pending cells -- three pending corrections, three
+rows, whatever the size of the table underneath. It is not a copy of the
+warehouse, which is what made the old staging mirror expensive.
 
-The privilege shape is the important part:
+**Why rows here and COALESCE in the executor, rather than a view.** The design
+first called for a `COALESCE` view per member. A Postgres view reads its base
+tables with its *owner's* privileges, and the only role that can create objects
+here is `speakql_edits_rw` -- which, by the assertion that protects the
+warehouse, holds **nothing** on `public`. A view it owned could not read the
+table it overlays, and granting it SELECT on `public` would break the one
+guarantee the overlay design exists to keep. So the overlay is applied at
+query time, by the executor, under `speakql_ro` in a read-only transaction:
 
-    speakql_edits_rw   owns the overlay tables. Holds NOTHING on public.
-    speakql_ro         SELECT on the VIEWS only -- never on the tables beneath.
+    speakql_edits_rw   owns and writes the overlay rows. Holds NOTHING on public.
+    speakql_ro         SELECT on the overlay rows, read-only, like everything else.
 
-A read privilege on a read-only object, granted in the opposite direction to
-the assertion that protects the warehouse. Both are asserted in
-tests/test_privileges.py.
+A member can never reach another member's overlay: the executor applies only
+the caller's own, after validation, and the validator refuses any statement
+that names `member_edits` directly.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ from sqlalchemy.engine import Engine
 log = logging.getLogger("speakql.overlay")
 
 OVERLAY_SCHEMA = "member_edits"
+READ_ROLE = "speakql_ro"
 
 _SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -48,115 +52,54 @@ def _ident(name: str) -> str:
     return name
 
 
-def overlay_schema_for(person_id: int) -> str:
-    """One schema per member. Named from an integer we control, never from
-    anything a user supplied."""
-    return f"{OVERLAY_SCHEMA}_p{int(person_id)}"
+def overlay_table_name(person_id: int, table_name: str) -> str:
+    """Named from an integer we control and a registry identifier -- never from
+    anything a user typed."""
+    return f"p{int(person_id)}_{_ident(table_name).lower()}"
 
 
-def ensure_schema(engine: Engine, person_id: int) -> str:
-    schema = overlay_schema_for(person_id)
-    with engine.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
-    return schema
+def overlay_table_for(person_id: int, table_name: str) -> str:
+    """Fully qualified, quoted, ready for a statement."""
+    return f'"{OVERLAY_SCHEMA}"."{overlay_table_name(person_id, table_name)}"'
 
 
-def ensure_overlay_table(engine: Engine, person_id: int, table_name: str) -> str:
-    """The thin table holding only this member's pending cells.
-
-    Not a copy of the warehouse -- one row per corrected cell. A member with
-    three pending corrections has three rows here, whatever the size of the
-    table underneath.
-    """
-    schema = overlay_schema_for(person_id)
-    table = _ident(table_name)
-    with engine.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
-        conn.execute(text(f'''
-            CREATE TABLE IF NOT EXISTS "{schema}"."{table}_rows" (
-                pk_value    TEXT NOT NULL,
-                column_name TEXT NOT NULL,
-                after_value TEXT,
-                PRIMARY KEY (pk_value, column_name)
-            )
-        '''))
-    return f'"{schema}"."{table}_rows"'
-
-
-def rebuild_view(
+def sync_rows(
     engine: Engine,
     person_id: int,
-    *,
-    schema_name: str,
     table_name: str,
-    pk_column: str,
-    columns: dict[str, str],
-    corrected_columns: set[str],
-    ro_role: str = "speakql_ro",
-) -> str:
-    """Create or replace the COALESCE view for one table.
+    rows: list[tuple[str, str, str | None]],
+) -> None:
+    """Make the overlay table hold exactly these pending cells.
 
-    `columns` maps column name -> data type, and the cast matters: the overlay
-    stores every value as text, so `COALESCE(e.after_value, s.units)` would be
-    a type error. The cast is built from the registry's declared type, never
-    from anything a user typed.
+    `rows` is (pk_value, column_name, after_value), taken from the open merge
+    requests in `speakql_meta` -- the source of truth. Replacing the contents
+    rather than patching them means the overlay can never drift from what the
+    merge queue says is pending: an approved, rejected or stale request simply
+    stops appearing here on the next sync.
     """
-    overlay = overlay_schema_for(person_id)
-    source_schema = _ident(schema_name)
-    table = _ident(table_name)
-    key = _ident(pk_column)
-
-    projected: list[str] = []
-    for column, data_type in columns.items():
-        safe_column = _ident(column)
-        if safe_column in corrected_columns and safe_column != key:
-            cast = _safe_type(data_type)
-            projected.append(
-                f'COALESCE(NULLIF(e_{safe_column}.after_value, \'\')::{cast}, '
-                f's."{safe_column}") AS "{safe_column}"'
-            )
-        else:
-            projected.append(f's."{safe_column}"')
-
-    joins: list[str] = []
-    for column in sorted(corrected_columns):
-        safe_column = _ident(column)
-        if safe_column == key:
-            continue
-        joins.append(
-            f'LEFT JOIN "{overlay}"."{table}_rows" e_{safe_column} '
-            f'ON e_{safe_column}.pk_value = s."{key}"::text '
-            f"AND e_{safe_column}.column_name = '{safe_column}'"
-        )
-
-    statement = (
-        f'CREATE OR REPLACE VIEW "{overlay}"."{table}" AS\n'
-        f'SELECT {", ".join(projected)}\n'
-        f'FROM "{source_schema}"."{table}" s\n'
-        + "\n".join(joins)
-    )
+    table = overlay_table_for(person_id, table_name)
 
     with engine.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{overlay}"'))
-        conn.execute(text(statement))
-        # The read role gets SELECT on the VIEW and nothing on the table
-        # underneath it. This is the grant §5.1 added in Revision 5.
-        conn.execute(text(f'GRANT USAGE ON SCHEMA "{overlay}" TO {_ident(ro_role)}'))
         conn.execute(text(
-            f'GRANT SELECT ON "{overlay}"."{table}" TO {_ident(ro_role)}'
+            f"CREATE TABLE IF NOT EXISTS {table} ("
+            " pk_value TEXT NOT NULL,"
+            " column_name TEXT NOT NULL,"
+            " after_value TEXT,"
+            " PRIMARY KEY (pk_value, column_name))"
         ))
+        # The table's owner may grant read on it. This is the only privilege
+        # the read role gains from an overlay, and it is read-only.
+        conn.execute(text(f"GRANT SELECT ON {table} TO {READ_ROLE}"))
+        conn.execute(text(f"DELETE FROM {table}"))
+        for pk_value, column_name, after_value in rows:
+            conn.execute(
+                text(f"INSERT INTO {table} (pk_value, column_name, after_value) "
+                     "VALUES (:pk, :col, :val)"),
+                {"pk": str(pk_value), "col": _ident(column_name), "val": after_value},
+            )
 
-    log.info("rebuilt overlay view %s.%s for person %s", overlay, table, person_id)
-    return f"{overlay}.{table}"
-
-
-def drop_view(engine: Engine, person_id: int, table_name: str) -> None:
-    """Called when a member's last pending correction on a table is merged or
-    rejected. A view that COALESCEs nothing is just a slower table."""
-    overlay = overlay_schema_for(person_id)
-    table = _ident(table_name)
-    with engine.begin() as conn:
-        conn.execute(text(f'DROP VIEW IF EXISTS "{overlay}"."{table}"'))
+    log.info("overlay %s now holds %d pending cell%s", table, len(rows),
+             "" if len(rows) == 1 else "s")
 
 
 _ALLOWED_CASTS = {
@@ -166,15 +109,13 @@ _ALLOWED_CASTS = {
 }
 
 
-def _safe_type(data_type: str) -> str:
-    """Only a known type may be interpolated into the view definition.
+def safe_type(data_type: str) -> str:
+    """Only a known type may be interpolated into the rewritten statement.
 
-    This string is not parameterisable -- it is part of the SQL grammar, not a
-    value -- so it is whitelisted instead. The type comes from the schema
-    registry, which came from the catalogue, but a second check costs nothing
-    and this is the one place a type reaches a statement as text.
+    A type is part of the SQL grammar, not a value, so it cannot be bound as a
+    parameter -- it is whitelisted instead. It comes from the schema registry,
+    which came from the catalogue, but this is the one place a type reaches a
+    statement as text, and a second check costs nothing.
     """
     base = (data_type or "").split("(")[0].strip().lower()
-    if base not in _ALLOWED_CASTS:
-        return "text"
-    return base
+    return base if base in _ALLOWED_CASTS else "text"

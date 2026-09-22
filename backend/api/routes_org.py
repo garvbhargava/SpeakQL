@@ -8,23 +8,20 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import secrets
-import hashlib
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
 
 from api import schemas
-from app.deps import MailerDep, OwnerDep, PrincipalDep, SessionDep
+from app.deps import MailerDep, OwnerDep, PrincipalDep, SessionDep, SettingsDep
 from app.rbac import Denied
+from auth import invitations
 from db.entities import AccessGrant, Connection, Invitation, Organisation, Person
 from logs import audit_log
 
 log = logging.getLogger("speakql.org")
 
 router_api = APIRouter(prefix="/api/org", tags=["organisation"])
-
-INVITE_TTL = dt.timedelta(days=7)
 
 
 @router_api.get("", response_model=schemas.OrganisationOut)
@@ -80,13 +77,15 @@ def list_people(principal: OwnerDep, session: SessionDep) -> list[schemas.Person
 @router_api.post("/invite", response_model=schemas.PersonOut,
                  status_code=status.HTTP_201_CREATED)
 def invite(body: schemas.InvitePerson, principal: OwnerDep,
-           session: SessionDep, mailer: MailerDep) -> schemas.PersonOut:
+           session: SessionDep, settings: SettingsDep,
+           mailer: MailerDep) -> schemas.PersonOut:
     """Single-use, expiring, and it fixes the role and the grants.
 
     All three matter. A token that could be redeemed twice makes two accounts;
     one that never expires is a credential sitting in an inbox forever; and
     one that did not fix the role would let a redeemer choose to be an owner,
-    which is how you get a second owner nobody approved.
+    which is how you get a second owner nobody approved. Redemption is in
+    auth/invitations.py.
     """
     org = session.get(Organisation, principal.org_id)
     if org is None:
@@ -105,14 +104,15 @@ def invite(body: schemas.InvitePerson, principal: OwnerDep,
         if connection is None or connection.org_id != principal.org_id:
             raise Denied("no such database, or it is not yours")
 
-    raw_token = secrets.token_urlsafe(32)
+    raw_token, token_hash = invitations.new_token()
     invitation = Invitation(
         org_id=org.id,
         email=email,
-        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        token_hash=token_hash,
         product_role=body.product_role,
         grants_json=[g.model_dump() for g in body.grants],
-        expires_at=dt.datetime.now(dt.timezone.utc) + INVITE_TTL,
+        expires_at=(dt.datetime.now(dt.timezone.utc)
+                    + dt.timedelta(hours=settings.invite_ttl_hours)),
     )
     session.add(invitation)
 

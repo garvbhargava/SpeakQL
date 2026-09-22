@@ -7,16 +7,22 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
 # --- database ----------------------------------------------------------------
+# No Alembic: sql/*.sql is the schema's source of truth and bootstrap.sh runs it.
 SQLAlchemy==2.0.36
 psycopg[binary]==3.2.3
-alembic==1.14.0
 
 # --- safety: the AST validator. Nothing else decides whether SQL may run. ----
 sqlglot==26.0.1
 
-# --- auth --------------------------------------------------------------------
+# --- auth and secrets --------------------------------------------------------
+# No password hasher: there is no password anywhere in this product.
 PyJWT==2.10.1
-argon2-cffi==23.1.0
+# EmailStr in api/schemas.py needs it. Missing from the first version of this
+# file, which worked on a machine that happened to have it and would not have
+# started in the container.
+email-validator==2.2.0
+# Fernet, for connection credentials at rest (db/crypto.py).
+cryptography==44.0.0
 
 # --- models (added in build phases 3 and 5) ----------------------------------
 # sentence-transformers==3.3.1

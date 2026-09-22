@@ -8,6 +8,11 @@ That is not a permission gradient for its own sake. A member's answers use
 their own pending value from the moment they enter it, and nobody else's
 answers change at all — which is what protects the numbers other people quote
 while still letting the person who spotted the gap fix it where they stand.
+
+Every warehouse engine here comes from `engines.tenants`, built from the
+connection the correction is about. An owner's write therefore lands in their
+own warehouse and cannot land in anybody else's — which the first version of
+this file, holding one write engine bound to one DSN, could not promise.
 """
 
 from __future__ import annotations
@@ -25,8 +30,12 @@ from core import merge as merge_core
 from core.edit_validator import (
     EditContext, EditRequest, assert_single_row, compose_update, validate_edit,
 )
-from db.entities import Connection, EditableTable, MemberEdit, MergeRequest, Person, SchemaColumn
-from logs import audit_log, edit_log
+from db.edits_engine import sync_rows
+from db.entities import (
+    Connection, EditableTable, MemberEdit, MergeRequest, Person, SchemaColumn,
+)
+from db.tenant_engine import WriteNotSupported
+from logs import edit_log
 
 log = logging.getLogger("speakql.merges")
 
@@ -42,10 +51,19 @@ def propose_edit(body: schemas.ProposeEdit, principal: PrincipalDep,
 
     granted = resolve_connection(session, principal, body.connection_id)
     require(Action.CORRECT_VALUE, principal, granted)
+    connection = granted.connection
+
+    # A registered external database is read-only by construction; refuse
+    # before validating anything, with the reason stated.
+    try:
+        write_engine = engines.tenants.write(connection)
+        edits_engine = engines.tenants.edits(connection)
+    except WriteNotSupported as exc:
+        return schemas.EditResult(accepted=False, landed="refused", reason=str(exc))
 
     context = _edit_context(session, granted, principal)
     request = EditRequest(
-        connection_id=body.connection_id,
+        connection_id=connection.id,
         schema_name=body.schema_name,
         table_name=body.table_name,
         pk_column=body.pk_column,
@@ -61,8 +79,9 @@ def propose_edit(body: schemas.ProposeEdit, principal: PrincipalDep,
             accepted=False, landed="refused", reason=verdict.reason
         )
 
+    read_engine = engines.tenants.read(connection)
     before = merge_core.read_current_value(
-        engines.read,
+        read_engine,
         MemberEdit(
             schema_name=request.schema_name, table_name=request.table_name,
             pk_column=request.pk_column, pk_value=request.pk_value,
@@ -73,7 +92,7 @@ def propose_edit(body: schemas.ProposeEdit, principal: PrincipalDep,
     # --- the owner path: straight to the real table ------------------------
     if principal.is_owner:
         statement, params = compose_update(request)
-        with engines.write.begin() as conn:
+        with write_engine.begin() as conn:
             result = conn.execute(text(statement), params)
             single = assert_single_row(result.rowcount)
             if not single.allowed:
@@ -82,7 +101,7 @@ def propose_edit(body: schemas.ProposeEdit, principal: PrincipalDep,
 
         row = edit_log.write(session, edit_log.Change(
             person_id=principal.person_id,
-            connection_id=body.connection_id,
+            connection_id=connection.id,
             schema_name=body.schema_name,
             table_name=body.table_name,
             pk_column=body.pk_column,
@@ -99,9 +118,14 @@ def propose_edit(body: schemas.ProposeEdit, principal: PrincipalDep,
         )
 
     # --- the member path: their overlay, and a merge request ---------------
+    # A newer proposal for the same cell replaces the older one rather than
+    # stacking behind it: the member changed their mind, and the owner should
+    # decide on what they now propose.
+    _supersede_open_edit(session, principal.person_id, request)
+
     edit = MemberEdit(
         person_id=principal.person_id,
-        connection_id=body.connection_id,
+        connection_id=connection.id,
         schema_name=body.schema_name,
         table_name=body.table_name,
         pk_column=body.pk_column,
@@ -117,6 +141,10 @@ def propose_edit(body: schemas.ProposeEdit, principal: PrincipalDep,
     request_row = MergeRequest(member_edit_id=edit.id, state="open")
     session.add(request_row)
     session.flush()
+
+    # Their own answers use it from this moment on.
+    _sync_overlay(session, edits_engine, principal.person_id, connection.id,
+                  body.table_name)
 
     owner = session.scalar(select(Person).where(
         Person.org_id == principal.org_id, Person.product_role == "owner"
@@ -139,48 +167,36 @@ def list_merges(principal: PrincipalDep, session: SessionDep,
                 engines: EnginesDep) -> list[schemas.MergeOut]:
     """An owner sees their organisation's queue; a member sees their own.
 
-    Their own edits never appear as merge requests to themselves -- an owner
-    has nothing pending, ever, because their writes already landed.
+    An owner has nothing pending, ever, because their writes already landed.
     """
+    query = (
+        select(MergeRequest, MemberEdit, Person)
+        .join(MemberEdit, MemberEdit.id == MergeRequest.member_edit_id)
+        .join(Person, Person.id == MemberEdit.person_id)
+        .order_by(MergeRequest.created_at.desc())
+    )
     if principal.is_owner:
         connection_ids = [
             c.id for c in session.scalars(
                 select(Connection).where(Connection.org_id == principal.org_id)
             )
         ]
-        rows = session.execute(
-            select(MergeRequest, MemberEdit, Person)
-            .join(MemberEdit, MemberEdit.id == MergeRequest.member_edit_id)
-            .join(Person, Person.id == MemberEdit.person_id)
-            .where(MemberEdit.connection_id.in_(connection_ids or [-1]))
-            .order_by(MergeRequest.created_at.desc())
-        ).all()
+        query = query.where(MemberEdit.connection_id.in_(connection_ids or [-1]))
     else:
-        rows = session.execute(
-            select(MergeRequest, MemberEdit, Person)
-            .join(MemberEdit, MemberEdit.id == MergeRequest.member_edit_id)
-            .join(Person, Person.id == MemberEdit.person_id)
-            .where(MemberEdit.person_id == principal.person_id)
-            .order_by(MergeRequest.created_at.desc())
-        ).all()
+        query = query.where(MemberEdit.person_id == principal.person_id)
 
     out: list[schemas.MergeOut] = []
-    for request_row, edit, person in rows:
+    for request_row, edit, person in session.execute(query).all():
         current = None
         if request_row.state in ("open", "stale"):
+            connection = session.get(Connection, edit.connection_id)
             try:
-                current = merge_core.read_current_value(engines.read, edit)
+                current = merge_core.read_current_value(
+                    engines.tenants.read(connection), edit
+                )
             except Exception:  # noqa: BLE001 - a listing must not fail on one row
                 current = None
-        out.append(schemas.MergeOut(
-            id=request_row.id, state=request_row.state,  # type: ignore[arg-type]
-            raised_by=person.email,
-            table=f"{edit.schema_name}.{edit.table_name}",
-            pk_value=edit.pk_value, column_name=edit.column_name,
-            before_value=edit.before_value, proposed_value=edit.after_value,
-            current_value=current, note=edit.note,
-            created_at=request_row.created_at,
-        ))
+        out.append(_merge_out(request_row, edit, person, current))
     return out
 
 
@@ -196,9 +212,20 @@ def decide(merge_id: int, body: schemas.MergeDecision, principal: PrincipalDep,
     if edit is None:
         raise Denied("no such item, or it is not yours")
 
+    connection = session.get(Connection, edit.connection_id)
+    if connection is None or connection.org_id != principal.org_id:
+        raise Denied("no such item, or it is not yours")
+
+    try:
+        write_engine = engines.tenants.write(connection)
+        edits_engine = engines.tenants.edits(connection)
+    except WriteNotSupported as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    read_engine = engines.tenants.read(connection)
+
     if body.decision == "approve":
         result = merge_core.approve(
-            session, engines.write, engines.read, request_row, edit,
+            session, write_engine, read_engine, request_row, edit,
             decided_by=principal.person_id, org_id=principal.org_id,
         )
     elif body.decision == "reject":
@@ -208,11 +235,20 @@ def decide(merge_id: int, body: schemas.MergeDecision, principal: PrincipalDep,
         )
     else:
         fresh = merge_core.reraise_against_current(
-            session, engines.read, request_row, edit
+            session, read_engine, request_row, edit
         )
         request_row.state = "rejected"
         session.flush()
-        return _merge_out(session, fresh, engines)
+        _sync_overlay(session, edits_engine, edit.person_id, connection.id,
+                      edit.table_name)
+        fresh_edit = session.get(MemberEdit, fresh.member_edit_id)
+        return _merge_out(fresh, fresh_edit, session.get(Person, edit.person_id))
+
+    # Whatever the decision, the request is no longer open, so it leaves the
+    # member's overlay: merged values now come from the real table, rejected
+    # and stale ones are gone from their answers.
+    _sync_overlay(session, edits_engine, edit.person_id, connection.id,
+                  edit.table_name)
 
     member = session.get(Person, edit.person_id)
     if member is not None and body.decision in ("approve", "reject"):
@@ -224,13 +260,53 @@ def decide(merge_id: int, body: schemas.MergeDecision, principal: PrincipalDep,
                                    is merge_core.MergeOutcome.STALE else None),
         )
 
-    return _merge_out(session, request_row, engines, current=result.current_value)
+    return _merge_out(request_row, edit, member, result.current_value)
 
 
-def _merge_out(session, request_row: MergeRequest, engines,
-               current: str | None = None) -> schemas.MergeOut:
-    edit = session.get(MemberEdit, request_row.member_edit_id)
-    person = session.get(Person, edit.person_id) if edit else None
+# ------------------------------------------------------------- internals ----
+
+def _sync_overlay(session, edits_engine, person_id: int, connection_id: int,
+                  table_name: str) -> None:
+    """Make the member's overlay hold exactly their open requests.
+
+    Rebuilt from the merge queue, the source of truth, rather than patched --
+    so the overlay can never disagree with what the queue says is pending.
+    """
+    open_cells = session.execute(
+        select(MemberEdit.pk_value, MemberEdit.column_name, MemberEdit.after_value)
+        .join(MergeRequest, MergeRequest.member_edit_id == MemberEdit.id)
+        .where(
+            MemberEdit.person_id == person_id,
+            MemberEdit.connection_id == connection_id,
+            MemberEdit.table_name == table_name,
+            MergeRequest.state == "open",
+        )
+    ).all()
+    sync_rows(edits_engine, person_id, table_name,
+              [(pk, col, val) for pk, col, val in open_cells])
+
+
+def _supersede_open_edit(session, person_id: int, request: EditRequest) -> None:
+    previous = session.execute(
+        select(MergeRequest)
+        .join(MemberEdit, MemberEdit.id == MergeRequest.member_edit_id)
+        .where(
+            MemberEdit.person_id == person_id,
+            MemberEdit.connection_id == request.connection_id,
+            MemberEdit.table_name == request.table_name,
+            MemberEdit.pk_value == str(request.pk_value),
+            MemberEdit.column_name == request.column_name,
+            MergeRequest.state == "open",
+        )
+    ).scalars().all()
+    for row in previous:
+        row.state = "rejected"
+    if previous:
+        session.flush()
+
+
+def _merge_out(request_row: MergeRequest, edit: MemberEdit | None,
+               person: Person | None, current: str | None = None) -> schemas.MergeOut:
     return schemas.MergeOut(
         id=request_row.id, state=request_row.state,  # type: ignore[arg-type]
         raised_by=person.email if person else "?",

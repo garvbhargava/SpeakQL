@@ -42,7 +42,12 @@ from core.router import Route, route
 from core.schema_retriever import Column, LexicalRetriever, to_schema_text
 from core.sql_generator import GemmaGenerator
 from core.validator import Permitted
-from db.entities import Message, SchemaColumn, Thread
+from core.executor import OverlaySpec
+from db.edits_engine import overlay_table_for
+from db.tenant_engine import ConnectionUnavailable
+from db.entities import (
+    EditableTable, MemberEdit, MergeRequest, Message, SchemaColumn, Thread,
+)
 from logs import audit_log, query_log
 from logs.query_log import Outcome
 
@@ -213,13 +218,20 @@ def ask(
             )
 
         # -- 9. run it ------------------------------------------------------
+        # On THIS connection's warehouse, reached through an engine built from
+        # the connection row -- never a shared one. The executor then asks the
+        # server which database it is on and refuses a mismatch.
         executor.assert_same_organisation(principal.org_id, granted.connection.org_id)
         final_sql = routing.sql
 
+        overlays = _member_overlays(session, principal, granted.connection)
+
         try:
             result = executor.execute(
-                engines.read, final_sql, permitted,
+                engines.tenants.read(granted.connection), final_sql, permitted,
                 max_rows=settings.max_rows,
+                expected_database=engines.tenants.expected_database(granted.connection),
+                overlays=overlays,
             )
         except executor.StatementTimeout as exc:
             entry.outcome = Outcome.FAILED
@@ -228,6 +240,12 @@ def ask(
         except executor.ExecutionError as exc:
             entry.outcome = Outcome.FAILED
             return schemas.FailureOut(reason=str(exc), retryable=True)
+        except ConnectionUnavailable as exc:
+            # An external host that stopped passing the address check, or
+            # credentials that no longer decrypt. Retrying will not help.
+            entry.outcome = Outcome.FAILED
+            entry.refused_by = "connection"
+            return schemas.FailureOut(reason=str(exc), retryable=False)
 
         entry.row_count = result.row_count
         entry.latency_ms = result.elapsed_ms
@@ -271,6 +289,62 @@ def ask(
 
 
 # ------------------------------------------------------------- internals ----
+
+def _member_overlays(session, principal, connection) -> dict[str, OverlaySpec]:
+    """The caller's own pending corrections on this connection, per table.
+
+    Their reads of exactly those tables get their pending cells laid over the
+    real ones, so their own answers include their own values. Owners have
+    nothing pending -- their corrections land in the real table immediately --
+    and nobody's answers ever include somebody else's overlay, because the
+    overlay table is named from the caller's own person id.
+    """
+    if principal.is_owner or connection.kind != "internal":
+        return {}
+
+    pending = session.execute(
+        select(MemberEdit.table_name, MemberEdit.column_name)
+        .join(MergeRequest, MergeRequest.member_edit_id == MemberEdit.id)
+        .where(
+            MemberEdit.person_id == principal.person_id,
+            MemberEdit.connection_id == connection.id,
+            MemberEdit.schema_name == "public",
+            MergeRequest.state == "open",
+        )
+    ).all()
+    if not pending:
+        return {}
+
+    corrected: dict[str, set[str]] = {}
+    for table_name, column_name in pending:
+        corrected.setdefault(table_name.lower(), set()).add(column_name)
+
+    overlays: dict[str, OverlaySpec] = {}
+    for table_name, columns in corrected.items():
+        editable = session.scalar(select(EditableTable).where(
+            EditableTable.connection_id == connection.id,
+            EditableTable.schema_name == "public",
+            EditableTable.table_name == table_name,
+        ))
+        registry = session.execute(
+            select(SchemaColumn.column_name, SchemaColumn.data_type)
+            .where(
+                SchemaColumn.connection_id == connection.id,
+                SchemaColumn.schema_name == "public",
+                SchemaColumn.table_name == table_name,
+            )
+            .order_by(SchemaColumn.id)
+        ).all()
+        if editable is None or not registry:
+            continue   # the registry moved underneath; answer from real data
+        overlays[table_name] = OverlaySpec(
+            overlay_table=overlay_table_for(principal.person_id, table_name),
+            pk_column=editable.pk_column,
+            columns=tuple((c, t) for c, t in registry),
+            corrected=frozenset(columns),
+        )
+    return overlays
+
 
 def _registry_columns(session, connection_id: int) -> list[Column]:
     rows = session.scalars(

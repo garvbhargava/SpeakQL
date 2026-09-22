@@ -8,6 +8,7 @@ session, which is what keeps `executor.py` unable to construct a connection.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from contextlib import asynccontextmanager
 
@@ -24,6 +25,7 @@ from api import (
 from app.config import Settings, load_or_exit
 from app.mailer import Mailer
 from app.ratelimit import RateLimiter
+from auth import otp
 from auth import routes as auth_routes
 from core.llm_client import LLMClient
 from db.engines import Engines
@@ -53,6 +55,8 @@ async def lifespan(application: FastAPI):
         ask_per_hour=settings.rate_ask_per_hour,
         upload_per_day=settings.rate_upload_per_day,
         export_per_hour=settings.rate_export_per_hour,
+        codes_per_address_hour=settings.rate_codes_per_address_hour,
+        codes_per_ip_hour=settings.rate_codes_per_ip_hour,
     )
 
     # The LLM is optional at boot. A backend that refused to start without a
@@ -104,7 +108,19 @@ app.add_middleware(
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    # Headers are passed through: the first version dropped them, so every
+    # 429 lost the Retry-After that tells a client when to come back.
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code,
+                        headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(otp.LockedOut)
+async def locked_out(_request: Request, exc: otp.LockedOut) -> JSONResponse:
+    # Without this handler a locked address fell through to the catch-all
+    # below and got a 500 -- the right refusal, reported as our fault.
+    wait = max(1, int((exc.until - dt.datetime.now(dt.timezone.utc)).total_seconds()))
+    return JSONResponse({"detail": str(exc)}, status_code=429,
+                        headers={"Retry-After": str(wait)})
 
 
 @app.exception_handler(RequestValidationError)

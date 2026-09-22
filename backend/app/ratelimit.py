@@ -10,9 +10,13 @@ Three paths are limited, and they are the three that cost something real:
     upload   disk, and an index rebuild
     export   a second full read of the result
 
-Login is limited separately, by the OTP lockout in auth/otp.py, because the
-control there is per-address rather than per-account: an attacker guessing
-codes does not have an account yet.
+Sign-in has two more (§7.3), keyed by address and by client IP rather than by
+account, because the person asking for a code does not have an account yet:
+
+    code per address   10 an hour -- bounds mail-bombing one stranger
+    code per IP        30 an hour -- bounds mail-bombing many of them
+
+Guessing a code is bounded separately, by the lockout in auth/otp.py.
 
 A refused request still writes its `query_log` row. Rate limiting is an
 outcome, not an absence of one.
@@ -22,6 +26,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -30,6 +35,8 @@ class Limited(Enum):
     ASK = "ask"
     UPLOAD = "upload"
     EXPORT = "export"
+    CODE_PER_ADDRESS = "sign-in codes for this address"
+    CODE_PER_IP = "sign-in codes from this network"
 
 
 @dataclass
@@ -67,20 +74,24 @@ class RateLimiter:
     """
 
     def __init__(self, *, ask_per_hour: int, upload_per_day: int,
-                 export_per_hour: int) -> None:
+                 export_per_hour: int, codes_per_address_hour: int = 10,
+                 codes_per_ip_hour: int = 30) -> None:
         self._limits = {
             Limited.ASK: (ask_per_hour, 3600, "hour"),
             Limited.UPLOAD: (upload_per_day, 86400, "day"),
             Limited.EXPORT: (export_per_hour, 3600, "hour"),
+            Limited.CODE_PER_ADDRESS: (codes_per_address_hour, 3600, "hour"),
+            Limited.CODE_PER_IP: (codes_per_ip_hour, 3600, "hour"),
         }
-        self._buckets: dict[tuple[int, Limited], _Bucket] = {}
+        self._buckets: dict[tuple[Hashable, Limited], _Bucket] = {}
         self._lock = threading.Lock()
 
-    def check(self, person_id: int, what: Limited) -> Decision:
+    def check(self, person_id: Hashable, what: Limited) -> Decision:
         """Test and consume in one step, under a lock.
 
         Separating "check" from "consume" invites the race where two requests
-        both see the last slot.
+        both see the last slot. `person_id` is whatever identifies the caller
+        for this limit: a person, or for sign-in an address or an IP.
         """
         limit, window, label = self._limits[what]
         now = time.time()
@@ -109,7 +120,7 @@ class RateLimiter:
                 window=label,
             )
 
-    def peek(self, person_id: int, what: Limited) -> int:
+    def peek(self, person_id: Hashable, what: Limited) -> int:
         """How many remain, without consuming one."""
         limit, window, _ = self._limits[what]
         now = time.time()
@@ -120,7 +131,7 @@ class RateLimiter:
             live = [t for t in bucket.hits if t > now - window]
             return max(0, limit - len(live))
 
-    def reset(self, person_id: int | None = None) -> None:
+    def reset(self, person_id: Hashable | None = None) -> None:
         """Tests, and the demo reset button."""
         with self._lock:
             if person_id is None:

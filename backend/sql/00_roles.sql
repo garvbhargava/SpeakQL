@@ -28,6 +28,13 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'speakql_upload_ddl') THEN
     CREATE ROLE speakql_upload_ddl LOGIN;
   END IF;
+  -- The application's own data. The first version connected to speakql_meta
+  -- as speakql_owner -- a SUPERUSER -- so the API held exactly the privilege
+  -- the design says it never holds. This role owns the metadata tables and
+  -- nothing else, and it is not a superuser.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'speakql_app') THEN
+    CREATE ROLE speakql_app LOGIN;
+  END IF;
 END
 $$;
 
@@ -36,19 +43,22 @@ ALTER ROLE speakql_ro          PASSWORD :'ro_password';
 ALTER ROLE speakql_write       PASSWORD :'write_password';
 ALTER ROLE speakql_edits_rw    PASSWORD :'edits_password';
 ALTER ROLE speakql_upload_ddl  PASSWORD :'upload_password';
+ALTER ROLE speakql_app         PASSWORD :'app_password';
 
--- No role may create databases or roles. Only speakql_owner can, and the API
--- never loads its DSN (§5.1: "a separate DSN used only by the bootstrap
--- script", and config.py does not define the variable it lives in).
-ALTER ROLE speakql_ro          NOCREATEDB NOCREATEROLE NOSUPERUSER;
-ALTER ROLE speakql_write       NOCREATEDB NOCREATEROLE NOSUPERUSER;
-ALTER ROLE speakql_edits_rw    NOCREATEDB NOCREATEROLE NOSUPERUSER;
-ALTER ROLE speakql_upload_ddl  NOCREATEDB NOCREATEROLE NOSUPERUSER;
+-- No runtime role may create databases or roles, bypass row security, or be a
+-- superuser. Only speakql_owner can, and it is used by bootstrap alone: the
+-- API's container is never given its DSN, and config.py refuses to start if
+-- any runtime DSN names it.
+ALTER ROLE speakql_ro          NOCREATEDB NOCREATEROLE NOSUPERUSER NOBYPASSRLS;
+ALTER ROLE speakql_write       NOCREATEDB NOCREATEROLE NOSUPERUSER NOBYPASSRLS;
+ALTER ROLE speakql_edits_rw    NOCREATEDB NOCREATEROLE NOSUPERUSER NOBYPASSRLS;
+ALTER ROLE speakql_upload_ddl  NOCREATEDB NOCREATEROLE NOSUPERUSER NOBYPASSRLS;
+ALTER ROLE speakql_app         NOCREATEDB NOCREATEROLE NOSUPERUSER NOBYPASSRLS;
 
 -- ------------------------------------------------------------ databases ----
 -- speakql_meta   the application's own data, owned by the API
 -- northwind_dw   the seeded customer warehouse
--- trellis_dw     a second tenant, because isolation cannot be tested with one
+-- harbor_dw      a second tenant, because isolation cannot be tested with one
 -- speakql_uploads  tables created from uploaded files
 
 SELECT 'databases are created by bootstrap.sh before this file runs' AS note;

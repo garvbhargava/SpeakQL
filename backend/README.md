@@ -10,7 +10,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![sqlglot](https://img.shields.io/badge/validator-sqlglot-8A2BE2)](https://github.com/tobymao/sqlglot)
 [![Gemma](https://img.shields.io/badge/LLM-gemma3%3A4b-4A9EFF)](https://ollama.com/library/gemma3)
-[![Tests](https://img.shields.io/badge/tests-100%20passing-3FD68B)](#testing)
+[![Tests](https://img.shields.io/badge/tests-152%20passing-3FD68B)](#testing)
 
 `Backend` · [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) · [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) · [`main`](https://github.com/garvbhargava/SpeakQL/tree/main)
 
@@ -72,12 +72,14 @@ query may run.
 | **Four safety layers** | Intent gatekeeper → AST validator → database role → edit validator |
 | **Read-only by construction** | Enforced at the grant, at the connection, and before execution |
 | **Multi-tenant isolation** | Company domains and personal workspaces, with a null-domain guarantee |
+| **Per-connection engines** | A question runs on the warehouse it was about — checked again with `current_database()` before it runs |
 | **Two-axis permissions** | Product role (owner/member) × database role (analyst/viewer) per grant |
 | **Object-level authorisation** | Every id resolved to its owner; a guessed id is indistinguishable from a missing one |
 | **Correction workflow** | Owners write the real table; members propose through an overlay and a merge queue |
 | **Staleness refusal** | A merge whose row moved is refused, not applied — this was a real data-loss bug |
 | **Prompt-injection defence** | Warehouse values are fenced as data; explainer output cannot act |
-| **SSRF defence** | External hosts are *resolved* then judged — the address, never the string |
+| **SSRF defence** | External hosts are *resolved* then judged, and the connection is pinned to the address that passed |
+| **Sign-in abuse controls** | Five-attempt lockout, 60 s resend cooldown, hourly caps per address and per network |
 | **Honest measurement** | `query_log` gets a row on every path: answered, refused, blocked, failed |
 
 ---
@@ -153,9 +155,33 @@ cd SpeakQL/backend
 
 cp .env.example .env          # then set SECRET_KEY
 make up                       # postgres + api
-make bootstrap                # databases, roles, warehouses, seed
+make bootstrap                # databases, roles, warehouses, demo organisations
 make test-privileges          # prove the safety claims
 ```
+
+No `make` (plain Windows)? The targets are one line each:
+
+```bash
+docker compose up -d --build db api
+docker compose run --rm bootstrap
+docker compose exec -T api pytest tests/test_privileges.py -v
+```
+
+`bootstrap` is a **one-off container** and the only place the owner's
+credentials exist at runtime; the long-running `api` container is never given
+them. It is safe to run again.
+
+### Demo organisations
+
+Bootstrap seeds two tenants, each attached to **its own** warehouse:
+
+| Organisation | Sign in as | Warehouse |
+|---|---|---|
+| Northwind Group | `garv@northwind.co` (owner) | `northwind_dw` |
+| Harbor Supply | `owner@harborsupply.co` (owner) | `harbor_dw` |
+
+Harbor's data is deliberately different from Northwind's (`sql/22_second_tenant.sql`),
+so an answer read from the wrong warehouse would be visibly wrong.
 
 Verify:
 
@@ -199,12 +225,12 @@ speakql.mail: SIGN-IN CODE for you@company.com is 418902
 
 ## API
 
-25 routes. Full OpenAPI at `http://localhost:8000/docs`.
+24 routes, plus `/health`. Full OpenAPI at `http://localhost:8000/docs`.
 
 | Method | Route | What |
 |---|---|---|
-| `POST` | `/api/auth/start` | Send a code, and say what signing in will do |
-| `POST` | `/api/auth/verify` | Check the code; create or join |
+| `POST` | `/api/auth/start` | Send a code, and say what signing in will do; accepts an `invite_token` |
+| `POST` | `/api/auth/verify` | Check the code; sign in, create, join, or redeem the invitation |
 | `POST` | `/api/auth/refresh` | Exchange a refresh token |
 | `GET` | `/api/auth/me` | Session identity |
 | `POST` | **`/api/ask`** | The twelve steps, end to end |
@@ -212,11 +238,13 @@ speakql.mail: SIGN-IN CODE for you@company.com is 418902
 | `POST` | `/api/org/invite` | Single-use, expiring, role-fixing invitation |
 | `POST` | `/api/org/people/{id}/approve` | The owner decides who is in |
 | `POST` `DELETE` | `/api/org/people/{id}/grants` | Grant and revoke per database |
-| `GET` `POST` | `/api/connections` | List and register external databases |
+| `GET` `POST` | `/api/connections` | List databases; register an external one (four checks, reported one by one) |
+| `POST` | `/api/connections/{id}/reindex` | Re-read a database's schema into the registry |
 | `POST` | `/api/datasets/plan` · `/load` | Upload: say what would happen, then do it |
 | `POST` | `/api/rows/edit` | Correct a value (owner writes; member proposes) |
 | `GET` `POST` | `/api/merges` | The merge queue, with the staleness check |
 | `GET` | `/api/schema/{id}` · `/api/threads` | Schema and conversation history |
+| `POST` | `/api/feedback/{message_id}` | Rate an answer |
 
 `/api/ask` returns one of **five shapes**, so the interface renders each
 differently: `answer`, `clarify`, `blocked`, `refusal`, `failure`.
@@ -232,9 +260,9 @@ harder to find.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SECRET_KEY` | — | **required.** JWT signing and OTP hashing |
-| `META_DSN` | — | **required.** Application's own data |
-| `RO_DSN` | — | **required.** Every read |
+| `SECRET_KEY` | — | **required.** JWT signing, OTP hashing, and (through HKDF) the credential key |
+| `META_DSN` | — | **required.** Application's own data, as `speakql_app` |
+| `RO_DSN` | — | **required.** Credentials for every read; the database is chosen per connection |
 | `WRITE_DSN` | — | **required.** The edit path |
 | `EDITS_DSN` | — | **required.** Member overlays |
 | `UPLOADS_DSN` | — | **required.** File ingestion |
@@ -244,26 +272,62 @@ harder to find.
 | `FREE_EMAIL_MODE` | `personal_workspace` | `personal_workspace`, `invite_only`, `blocked` |
 | `STATEMENT_TIMEOUT_MS` | `10000` | Hard stop on any query |
 | `MAX_ROWS` | `5000` | Row cap |
+| `INVITE_TTL_HOURS` | `168` | How long an invitation link lives |
+| `RATE_CODES_PER_ADDRESS_HOUR` | `10` | Sign-in codes one address may be sent per hour |
+| `RATE_CODES_PER_IP_HOUR` | `30` | Sign-in codes one network may request per hour |
+| `COMPOSE_LLM_ENDPOINT` | `http://llm:11434` | Where the `api` container finds Gemma |
 
 > **`SPEAKQL_OWNER_DSN` is deliberately absent from `Settings`.**
 > `speakql_owner` can create databases and roles; the API must never hold it.
-> An accidental `settings.owner_dsn` fails at *import*, not at runtime.
-> `bootstrap.sh` reads it straight from the environment, and a test asserts
-> that no field on `Settings` could ever hold it.
+> An accidental `settings.owner_dsn` fails at *import*, not at runtime — and
+> `config.py` **refuses to start** if any of the five runtime DSNs names
+> `speakql_owner` or `postgres`.
 
 ---
 
 ## Security model
 
-### Five database roles
+### Six database roles — five at runtime, none of them privileged
 
 | Role | Holds | Used by |
 |---|---|---|
-| `speakql_owner` | everything | `bootstrap.sh` only — **never** the API |
-| `speakql_ro` | `SELECT` on warehouse and upload schemas; `SELECT` on overlay **views** only | every read |
-| `speakql_write` | `UPDATE`/`INSERT`, only on editable tables, only scoped by primary key | the edit path |
-| `speakql_edits_rw` | its own overlay tables; **nothing** on `public` | pending member corrections |
-| `speakql_upload_ddl` | `CREATE`/`INSERT` in its own organisation's upload schema | file ingestion |
+| `speakql_owner` | everything (superuser) | the one-off `bootstrap` container only — **never** the API |
+| `speakql_app` | owns `speakql_meta`; **nothing** on any warehouse | the API's own data |
+| `speakql_ro` | `SELECT` on warehouse and upload schemas, and on overlay rows | every read |
+| `speakql_write` | `SELECT`/`INSERT`/`UPDATE` on the warehouse; never `DELETE` or `TRUNCATE` | the edit path |
+| `speakql_edits_rw` | its own overlay tables in `member_edits`; **nothing** on `public` | pending member corrections |
+| `speakql_upload_ddl` | `CREATE` on the uploads database, for per-organisation schemas | file ingestion |
+
+No runtime role can create a database or a role, bypass row security, or log
+in to `speakql_meta` except `speakql_app` — and Postgres itself is asked to
+confirm each of those in `tests/test_privileges.py`.
+
+### A question runs on the warehouse it was about
+
+Every warehouse engine is **built from the connection row** the caller was
+authorised to hold (`db/tenant_engine.py`) — the role is fixed, only the
+database changes. There is no shared read engine that could point anywhere
+else. Then, immediately before the query runs, the executor asks the server
+`SELECT current_database()` and refuses a mismatch. Two checks, because one
+check is one point of failure.
+
+### Member corrections are an overlay, resolved at execution
+
+A member's pending value lives in `member_edits."p{person}_{table}"`. After the
+question's SQL is validated, the executor swaps each corrected table for a
+derived table that `COALESCE`s the member's pending cells over the real ones —
+so their own answers include their pending value, and nobody else's change.
+Naming `member_edits` in a question is refused by the validator; the
+substitution is the executor's, never a statement anybody supplied.
+
+### External databases
+
+The URL is **built from its parts** (`URL.create`), never pasted together, and
+the connection goes to **the exact address `check_host` judged** (libpq
+`hostaddr`), re-checked every time an engine is built. Credentials are sealed
+with Fernet under a key derived from `SECRET_KEY` by HKDF, decrypted in one
+place, and returned by no endpoint. An account that can write is refused at
+registration.
 
 ### Read-only, enforced three times
 
@@ -305,25 +369,51 @@ message theirs*. Every identifier is resolved to its owner, and **a guessed id
 returns the same response as one that does not exist** — same status, same
 message. A 404/403 split would be an oracle for mapping the system.
 
+### Sign-in
+
+No passwords. A six-digit code, hashed with HMAC-SHA256 and salted with the
+address, compared in constant time. Five wrong codes lock the address for
+fifteen minutes; a new code cannot be requested within sixty seconds of the
+last; and each address and each network has an hourly cap. Invitations are
+single-use (a conditional `UPDATE`, so two racing redemptions cannot both
+win), expire, are bound to the address they were sent to, and still need the
+code from that inbox — a leaked link is not enough on its own.
+
+### Found in review, and fixed
+
+Each of these was a real defect in an earlier version of this branch. Each now
+has a test that fails if it comes back.
+
+| Defect | Consequence | Fix |
+|---|---|---|
+| One shared read engine | A question could run on another company's warehouse | Per-connection engines + `current_database()` check |
+| API connected as `speakql_owner` | The API held superuser | `speakql_app`; config refuses a superuser DSN |
+| DSN pasted from user input | A password like `x@127.0.0.1:5432/db?` moved the connection past the SSRF check | `URL.create` from parts |
+| Host resolved twice | DNS rebinding could swap in a private address | Connect via the judged address (`hostaddr`) |
+| Failure count rolled back with the refusal | The five-attempt lockout never fired | Count committed before refusing |
+| PKs read from `information_schema` | Invisible to a SELECT-only role: zero editable tables | Read from `pg_catalog` |
+| No `.dockerignore` | `COPY . .` baked `.env` secrets into the image | `.dockerignore` |
+| `email-validator` missing | The container could not start | Pinned in `requirements.txt` |
+
 ---
 
 ## Testing
 
 ```bash
-make test               # the whole suite
-make test-privileges    # the six §17 assertions, against a live database
+make test               # the whole suite, inside the api container
+make test-privileges    # the Postgres assertions, against the live database
 ```
 
-**100 tests run without a database**, so the safety surface can be checked
-anywhere:
+**152 tests.** 137 of them run anywhere, without a database:
 
 | Suite | Covers |
 |---|---|
 | `test_validator.py` | 56 cases — every statement above, plus viewer restrictions, nesting, limits, and that it never raises on hostile input |
 | `test_security.py` | SSRF, prompt-injection fencing, and the write path |
-| `test_api.py` | The real app end to end: auth, tenant isolation, token-kind confusion, layer 1 |
+| `test_isolation.py` | Per-connection routing, the `current_database()` refusal, host pinning, the password-moves-the-host bug, credential sealing, the superuser refusal, the overlay rewrite |
+| `test_api.py` | The real app end to end: sign-in, the lockout, cooldowns and caps, invitations (single-use, bound, expiring, racing), tenant isolation, token-kind confusion, layer 1 |
 
-And **six that only Postgres can answer**, which need the container:
+And **fifteen that only Postgres can answer**, run in the container:
 
 | # | Assertion |
 |---|---|
@@ -332,13 +422,17 @@ And **six that only Postgres can answer**, which need the container:
 | 3 | Read transactions are read-only at the server, not merely by convention |
 | 4 | The write role cannot `DELETE` or `TRUNCATE` — a correction never removes |
 | 5 | The overlay role holds **nothing** on `public` |
-| 6 | No runtime role can create a database or a role |
+| 6 | No runtime role — `speakql_app` included — can create a database or a role, or bypass row security |
+| + | The two tenants' warehouses give different answers to the same query |
+| + | No warehouse role can log in to `speakql_meta` |
+| + | `speakql_app` cannot connect to or read a warehouse |
 
 **Two tenants, on purpose.** `bootstrap.sh` creates `northwind_dw` *and*
-`trellis_dw` — isolation cannot be tested against one database. The seed is
-deliberately imperfect too: three rows in `shipments` have no `units`, because
-the *incomplete* answer mode and the correction workflow need real missing
-values. `21_seed.sql` raises if those gaps go missing.
+`harbor_dw` — isolation cannot be tested against one database, and Harbor's
+names and amounts are changed so a cross-tenant read would be visible. The
+seed is deliberately imperfect too: three rows in `shipments` have no `units`,
+because the *incomplete* answer mode and the correction workflow need real
+missing values. `21_seed.sql` raises if those gaps go missing.
 
 ---
 
@@ -352,15 +446,17 @@ backend/
 ├── app/        main · config · deps · rbac · object_access · ratelimit · mailer
 ├── api/        routes_ask · routes_org · routes_connections · routes_datasets
 │               routes_merges · routes_misc · schemas.py (the API contract)
-├── auth/       routes · otp · jwt_handler · domain_resolver · public_domains
+├── auth/       routes · otp · jwt_handler · invitations · domain_resolver · public_domains
 ├── core/       question_handler · context_resolver · schema_retriever
 │               sql_generator · validator · edit_validator · router · executor
 │               merge · visualiser · explainer · llm_client · file_ingest
-├── db/         engines · entities · session · introspect · edits_engine · host_guard
+├── db/         engines · tenant_engine · crypto · entities · session
+│               introspect · edits_engine · host_guard
 ├── logs/       query_log · edit_log · audit_log
-├── sql/        00_roles · 10_meta · 20_warehouse · 21_seed
-├── scripts/    bootstrap.sh
-├── tests/      test_validator · test_security · test_api · test_privileges
+├── sql/        00_roles · 10_meta · 20_warehouse · 21_seed · 22_second_tenant
+├── scripts/    bootstrap.sh · seed_demo.py
+├── tests/      test_validator · test_security · test_isolation · test_api · test_privileges
+├── .dockerignore
 ├── .env.example
 ├── docker-compose.yml
 ├── Dockerfile
@@ -375,6 +471,8 @@ backend/
 - `validator.py` and `edit_validator.py` are the **only** places safety rules
   live. A check anywhere else is a bug, not a second layer.
 - `executor.py` receives an **engine, never a DSN**, and cannot construct one.
+  Every warehouse engine comes from `db/tenant_engine.py`, built from a
+  connection row — there is no `engines.read`.
 - Each of the three logs has **exactly one writer**.
 
 > **Naming note.** Backend Plan §15 calls the log package `logging/`. That name
@@ -389,11 +487,11 @@ Build weeks 1–7 are the mid-term presentation; weeks 8–10 are the end-term.
 
 | Phase | Deliverable | Status |
 |:---:|---|:---:|
-| 1 | Foundation — compose, config, engines, roles, privilege assertions | ✅ |
+| 1 | Foundation — compose, config, per-connection engines, roles, privilege assertions (verified on Postgres 15) | ✅ |
 | 2 | Synthetic pair generation — *the critical path* | ⏳ |
 | 3 | Model A — MiniLM retriever + FAISS (lexical baseline in place) | ⏳ |
-| 4 | Auth, grants, object access, API contract | ✅ |
-| 5 | Model B — CodeT5 generator | ⬜ |
+| 4 | Auth, invitations, grants, object access, API contract | ✅ |
+| 5 | Model B — CodeT5 generator (Gemma answers until it lands) | ⏳ |
 | 6 | Validator, router, executor, `/api/ask` | ✅ |
 | 7 | Corrections — owner path, member overlay, merge + staleness | ✅ |
 | 8 | File ingestion and external connections | ✅ |

@@ -7,10 +7,12 @@ import of `Settings` here and no call to `create_engine`. Whatever privilege
 the caller handed over is the ceiling, and this module cannot raise it.
 
 **Resolution happens at execution, not generation.** `sql_generator.py` always
-produces SQL against `public`. This module rewrites the schema qualifier to
-the caller's overlay for exactly those tables where that member has a pending
-correction -- so their own answers include their own pending values, and
-nobody else's answers change at all.
+produces SQL against `public`. For exactly those tables where the calling
+member has a pending correction, this module substitutes a derived table that
+`COALESCE`s their pending cells over the real ones -- so their own answers
+include their own pending values, and nobody else's answers change at all.
+It happens here, after validation and under the read-only role, which is why
+the overlay needs no view and no privilege on `public` (see db/edits_engine.py).
 
 The second check of the organisation identity also lives here, immediately
 before the query runs (§6). One check is one point of failure.
@@ -58,18 +60,63 @@ class Result:
         return [dict(zip(self.columns, row)) for row in self.rows]
 
 
-def rewrite_for_overlay(sql: str, overlay_schema: str,
-                        overlaid_tables: set[str]) -> tuple[str, tuple[str, ...]]:
-    """Point reads at the member's overlay views, for those tables only.
+@dataclass(frozen=True)
+class OverlaySpec:
+    """Everything needed to lay one member's pending cells over one table.
 
-    The overlay view is a `COALESCE` of the member's pending rows over the
-    real table (§10.4). `speakql_ro` holds SELECT on the **views** and nothing
-    on the overlay tables beneath them.
-
-    Returns the rewritten SQL and which tables were redirected, so the answer
-    can say "includes your pending value" rather than changing silently.
+    `columns` is every column of the real table in order, with its registry
+    type. `corrected` is the subset that has at least one pending cell. All of
+    it comes from the schema registry and the merge queue -- none of it from
+    the request.
     """
-    if not overlaid_tables:
+
+    overlay_table: str                     # quoted, e.g. "member_edits"."p42_shipments"
+    pk_column: str
+    columns: tuple[tuple[str, str], ...]   # (name, data_type)
+    corrected: frozenset[str]
+
+
+def _overlay_select(table: str, spec: OverlaySpec) -> str:
+    from db.edits_engine import _ident, safe_type  # noqa: PLC0415
+
+    key = _ident(spec.pk_column)
+    projected: list[str] = []
+    joins: list[str] = []
+
+    for name, data_type in spec.columns:
+        column = _ident(name)
+        if column in spec.corrected and column != key:
+            alias = f"o_{column}"
+            projected.append(
+                f'COALESCE(CAST(NULLIF({alias}.after_value, \'\') AS '
+                f'{safe_type(data_type)}), s."{column}") AS "{column}"'
+            )
+            joins.append(
+                f"LEFT JOIN {spec.overlay_table} AS {alias} "
+                f'ON {alias}.pk_value = CAST(s."{key}" AS TEXT) '
+                f"AND {alias}.column_name = '{column}'"
+            )
+        else:
+            projected.append(f's."{column}"')
+
+    return (
+        f"SELECT {', '.join(projected)} "
+        f'FROM "public"."{_ident(table)}" AS s ' + " ".join(joins)
+    )
+
+
+def rewrite_for_overlay(
+    sql: str, overlays: dict[str, OverlaySpec]
+) -> tuple[str, tuple[str, ...]]:
+    """Substitute the member's overlay for the tables they have corrected.
+
+    Each reference to `public.<table>` becomes a derived table with the same
+    alias, so every column reference in the original query still resolves --
+    only the values of the corrected cells differ. Returns the rewritten SQL
+    and which tables were overlaid, so the answer can say "includes your
+    pending value" rather than changing silently.
+    """
+    if not overlays:
         return sql, ()
 
     try:
@@ -77,17 +124,27 @@ def rewrite_for_overlay(sql: str, overlay_schema: str,
     except Exception:
         return sql, ()
 
-    redirected: set[str] = set()
+    targets = []
     for table in tree.find_all(exp.Table):
         name = (table.name or "").lower()
         schema = (table.text("db") or "public").lower()
-        if schema != "public":
-            continue
-        if name in overlaid_tables:
-            table.set("db", exp.to_identifier(overlay_schema))
-            redirected.add(name)
+        if schema == "public" and name in overlays:
+            targets.append(table)
 
-    return tree.sql(dialect=DIALECT), tuple(sorted(redirected))
+    overlaid: set[str] = set()
+    # Replace after collecting: mutating a tree while walking it skips nodes.
+    for table in targets:
+        name = table.name.lower()
+        alias = table.alias or table.name
+        derived = sqlglot.parse_one(_overlay_select(name, overlays[name]),
+                                    read=DIALECT)
+        table.replace(exp.Subquery(
+            this=derived,
+            alias=exp.TableAlias(this=exp.to_identifier(alias)),
+        ))
+        overlaid.add(name)
+
+    return tree.sql(dialect=DIALECT), tuple(sorted(overlaid))
 
 
 def execute(
@@ -96,8 +153,8 @@ def execute(
     permitted: Permitted,
     *,
     max_rows: int,
-    overlay_schema: str | None = None,
-    overlaid_tables: set[str] | None = None,
+    expected_database: str | None = None,
+    overlays: dict[str, OverlaySpec] | None = None,
 ) -> Result:
     """Run a validated SELECT under a read-only engine.
 
@@ -105,6 +162,11 @@ def execute(
     before it got here; it is validated once more immediately before execution
     so that nothing which happened in between -- a rewrite, a retry, a bug --
     can put an unchecked statement in front of the database.
+
+    `expected_database` is the database the question was about. Before the
+    query runs, the server is asked which database this connection is actually
+    on, and a mismatch refuses. It is the check that would have caught the
+    first version of this backend, which ran every question on one warehouse.
     """
     recheck = validate(sql, permitted)
     if not recheck.allowed:
@@ -113,16 +175,28 @@ def execute(
         log.error("post-validation refusal, statement was altered: %s", recheck.reason)
         raise ExecutionError(f"refused at execution: {recheck.reason}")
 
+    # The overlay is applied AFTER validation, by this module, and only ever
+    # the caller's own -- so a statement naming member_edits directly is
+    # refused above, while the executor's own substitution is not a statement
+    # anybody supplied.
     final_sql = sql
     used_overlay: tuple[str, ...] = ()
-    if overlay_schema and overlaid_tables:
-        final_sql, used_overlay = rewrite_for_overlay(
-            sql, overlay_schema, overlaid_tables
-        )
+    if overlays:
+        final_sql, used_overlay = rewrite_for_overlay(sql, overlays)
 
     started = time.monotonic()
     try:
         with engine.connect() as conn:
+            if expected_database and engine.dialect.name == "postgresql":
+                actual = conn.execute(text("SELECT current_database()")).scalar_one()
+                if actual != expected_database:
+                    log.error(
+                        "database identity mismatch: expected %s, connected to %s",
+                        expected_database, actual,
+                    )
+                    raise ExecutionError(
+                        "refused: this query was routed to the wrong database"
+                    )
             cursor = conn.execute(text(final_sql))
             columns = list(cursor.keys())
             # fetchmany(max_rows + 1): the extra row is how we know the result

@@ -168,7 +168,7 @@ git clone -b Backend https://github.com/garvbhargava/SpeakQL.git
 cd SpeakQL/backend
 cp .env.example .env         # then set SECRET_KEY
 make up                      # postgres + api
-make bootstrap               # databases, five roles, two seeded warehouses
+make bootstrap               # databases, roles, two tenants on two warehouses
 make test-privileges         # prove the read path cannot write
 ```
 
@@ -185,14 +185,13 @@ presentation; weeks 8–10 are the end-term.
 
 | Branch | State |
 |---|---|
-| `Backend` | ✅ **Weeks 1–7 complete** — twelve-step pipeline, four safety layers, 25 routes, 100 tests passing |
-| `Frontend` | 🔨 Next — the interactive mockup, in dark by default |
+| `Backend` | 🔨 **Platform complete and verified on Postgres 15** — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 152 tests passing. **Models in progress:** synthetic pairs, Model A (MiniLM) and Model B (CodeT5) |
+| `Frontend` | ⏳ Next — the interactive mockup, in dark by default |
 | `Full-Stack` | ⏳ After the frontend is approved |
 | `documentation` | ⏳ Added when the project is finished |
 
 **Deferred to the end-term by design:** SSE streaming, voice input, export, the
-evaluation harness and the ablation table — and CodeT5's training, which is on
-the critical path and starts with synthetic pair generation.
+evaluation harness and the ablation table.
 
 ---
 

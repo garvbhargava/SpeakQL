@@ -94,12 +94,19 @@ def verify(secret_key: str, email: str, code: str, stored_hash: str,
 
 # --------------------------------------------------------------- lockout ----
 
+def _aware(moment: dt.datetime) -> dt.datetime:
+    # Postgres returns timestamptz as an aware datetime; SQLite, which the API
+    # tests run on, returns it naive. Comparing the two raises TypeError.
+    return moment if moment.tzinfo else moment.replace(tzinfo=dt.timezone.utc)
+
+
 def check_not_locked(session: Session, email: str) -> None:
     row = _attempt_row(session, email)
     if row is None or row.locked_until is None:
         return
-    if row.locked_until > _now():
-        raise LockedOut(row.locked_until)
+    until = _aware(row.locked_until)
+    if until > _now():
+        raise LockedOut(until)
     # window has passed; reset
     row.failures = 0
     row.locked_until = None
