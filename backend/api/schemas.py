@@ -26,6 +26,9 @@ class Model(BaseModel):
 
 class SignupStart(Model):
     email: EmailStr
+    # From the invitation link. Checked FIRST, before any domain lookup, so it
+    # works for any address -- including free-mail under invite_only (§7.1).
+    invite_token: str | None = Field(default=None, min_length=16, max_length=128)
 
 
 class SignupStarted(Model):
@@ -36,8 +39,8 @@ class SignupStarted(Model):
     """
 
     path: Literal[
-        "join_existing", "create_company", "personal_workspace",
-        "invite_required", "refused",
+        "sign_in", "invitation", "join_existing", "create_company",
+        "personal_workspace", "invite_required", "refused",
     ]
     reason: str
     organisation_name: str | None = None
@@ -119,7 +122,9 @@ class ConnectionOut(Model):
 
     id: int
     name: str
-    kind: Literal["external", "uploaded"]
+    # "internal" was missing, so listing the seeded demo warehouses failed
+    # validation and returned a 500.
+    kind: Literal["internal", "external", "uploaded"]
     database_name: str
     host: str | None = None
     table_count: int = 0
@@ -128,12 +133,18 @@ class ConnectionOut(Model):
 
 
 class RegisterConnection(Model):
+    """Every part is bounded. The URL is built with URL.create, which escapes
+    each part -- these patterns are the second line, so a part that is not a
+    hostname, a database name or a role name never reaches it at all."""
+
     name: str = Field(min_length=1, max_length=120)
-    host: str
-    port: int = 5432
-    database_name: str
-    username: str
-    password: str
+    host: str = Field(min_length=1, max_length=253, pattern=r"^[A-Za-z0-9.:\-]+$")
+    port: int = Field(default=5432, ge=1, le=65535)
+    database_name: str = Field(min_length=1, max_length=63,
+                               pattern=r"^[A-Za-z0-9_$\-]+$")
+    username: str = Field(min_length=1, max_length=63,
+                          pattern=r"^[A-Za-z0-9_.@$\-]+$")
+    password: str = Field(min_length=1, max_length=256)
 
 
 class ConnectionCheck(Model):

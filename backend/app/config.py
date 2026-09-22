@@ -63,7 +63,7 @@ class Settings:
     env: str
     secret_key: str
 
-    # --- the four runtime DSNs (§5.1). Note what is NOT here: the owner DSN --
+    # --- the five runtime DSNs (§5.1). Note what is NOT here: the owner DSN --
     meta_dsn: str
     ro_dsn: str
     write_dsn: str
@@ -80,11 +80,14 @@ class Settings:
     free_email_mode: str   # personal_workspace | invite_only | blocked
     statement_timeout_ms: int
     max_rows: int
+    invite_ttl_hours: int
 
-    # --- rate limits (§7.4) -------------------------------------------------
+    # --- rate limits (§7.3, §7.4) -------------------------------------------
     rate_ask_per_hour: int
     rate_upload_per_day: int
     rate_export_per_hour: int
+    rate_codes_per_address_hour: int
+    rate_codes_per_ip_hour: int
 
     warnings: tuple[str, ...] = field(default=(), compare=False)
 
@@ -93,9 +96,41 @@ _VALID_LLM_MODES = {"local", "hosted"}
 _VALID_FREE_EMAIL_MODES = {"personal_workspace", "invite_only", "blocked"}
 
 
+_FORBIDDEN_RUNTIME_USERS = {"speakql_owner", "postgres"}
+
+
+def _user_of(dsn: str) -> str:
+    """The username in a DSN, without importing SQLAlchemy at config time."""
+    rest = dsn.split("://", 1)[-1]
+    if "@" not in rest:
+        return ""
+    credentials = rest.rsplit("@", 1)[0]
+    return credentials.split(":", 1)[0].lower()
+
+
+def _refuse_privileged(name: str, dsn: str) -> None:
+    """No runtime DSN may name the owner or the built-in superuser.
+
+    The first version of this backend connected to its own database as
+    speakql_owner -- a superuser -- while its documentation said the API never
+    held the owner's credentials. Those two statements cannot both be true, and
+    this check is what makes the second one enforced rather than asserted.
+    """
+    user = _user_of(dsn)
+    if user in _FORBIDDEN_RUNTIME_USERS:
+        raise ConfigError(
+            f"{name} connects as {user!r}, which is a superuser. The API must "
+            "run as a least-privilege role (speakql_app for META_DSN); the "
+            "owner is for bootstrap.sh only."
+        )
+
+
 def load() -> Settings:
     """Build Settings from the environment, or raise ConfigError."""
     warnings: list[str] = []
+
+    for name in ("META_DSN", "RO_DSN", "WRITE_DSN", "EDITS_DSN", "UPLOADS_DSN"):
+        _refuse_privileged(name, os.environ.get(name, ""))
 
     llm_mode = _optional("LLM_MODE", "local")
     if llm_mode not in _VALID_LLM_MODES:
@@ -137,9 +172,12 @@ def load() -> Settings:
         free_email_mode=free_email_mode,
         statement_timeout_ms=_int("STATEMENT_TIMEOUT_MS", 10_000),
         max_rows=_int("MAX_ROWS", 5_000),
+        invite_ttl_hours=_int("INVITE_TTL_HOURS", 168),
         rate_ask_per_hour=_int("RATE_ASK_PER_HOUR", 60),
         rate_upload_per_day=_int("RATE_UPLOAD_PER_DAY", 20),
         rate_export_per_hour=_int("RATE_EXPORT_PER_HOUR", 30),
+        rate_codes_per_address_hour=_int("RATE_CODES_PER_ADDRESS_HOUR", 10),
+        rate_codes_per_ip_hour=_int("RATE_CODES_PER_IP_HOUR", 30),
         warnings=tuple(warnings),
     )
 

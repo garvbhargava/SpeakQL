@@ -1,7 +1,7 @@
 -- SpeakQL · a customer warehouse (Backend Plan §5)
 --
 -- Run once per tenant database by scripts/bootstrap.sh, against northwind_dw
--- and again against trellis_dw. Two tenants, deliberately: isolation cannot be
+-- and again against harbor_dw. Two tenants, deliberately: isolation cannot be
 -- tested against one.
 --
 -- The schema is the 18-table warehouse the documents describe, reduced here to
@@ -83,12 +83,18 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO speakql_write;
 -- never DELETE, never TRUNCATE, never DDL
 REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM speakql_write;
 
--- speakql_edits_rw: owns the overlay schema and holds NOTHING on public.
+-- speakql_edits_rw: owns the overlay tables and holds NOTHING on public.
 -- This is the assertion that protects the warehouse.
 GRANT CONNECT ON DATABASE :"dbname" TO speakql_edits_rw;
 GRANT USAGE, CREATE ON SCHEMA member_edits TO speakql_edits_rw;
 REVOKE ALL ON SCHEMA public FROM speakql_edits_rw;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM speakql_edits_rw;
+
+-- The read role may look up names in member_edits. It gains SELECT on each
+-- overlay table only when edits_rw -- that table's owner -- grants it, and the
+-- executor applies only the caller's own overlay. A statement naming
+-- member_edits directly is refused by the validator before it gets here.
+GRANT USAGE ON SCHEMA member_edits TO speakql_ro;
 
 -- speakql_upload_ddl: nothing here. It works only inside speakql_uploads.
 REVOKE ALL ON DATABASE :"dbname" FROM speakql_upload_ddl;

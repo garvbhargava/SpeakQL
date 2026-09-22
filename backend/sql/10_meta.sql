@@ -47,14 +47,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS people_email_key ON people (lower(email));
 CREATE INDEX IF NOT EXISTS people_org_idx ON people (org_id);
 
 -- ---------------------------------------------------------- connections ----
--- A registered database, or the home of an uploaded dataset. Credentials are
--- encrypted at rest and are never returned by any endpoint, including the one
--- that lists connections. (§9.3)
+-- A warehouse the organisation can ask about. Every engine that reaches it is
+-- built from this row (db/tenant_engine.py), which is what guarantees a
+-- question runs on the database it was about. Three kinds:
+--   internal   a warehouse on this server (the seeded demo warehouses)
+--   uploaded   the organisation's own schema inside speakql_uploads
+--   external   an owner-registered database; credentials encrypted at rest,
+--              never returned by any endpoint (§9.3)
 CREATE TABLE IF NOT EXISTS connections (
     id             BIGSERIAL PRIMARY KEY,
     org_id         BIGINT      NOT NULL REFERENCES organisations (id) ON DELETE CASCADE,
     name           TEXT        NOT NULL,
-    kind           TEXT        NOT NULL CHECK (kind IN ('external', 'uploaded')),
+    kind           TEXT        NOT NULL CHECK (kind IN ('internal', 'external', 'uploaded')),
     host           TEXT        NULL,
     port           INTEGER     NULL,
     database_name  TEXT        NOT NULL,

@@ -22,6 +22,8 @@ import socket
 from dataclasses import dataclass
 from enum import Enum
 
+from sqlalchemy.engine import URL
+
 
 class HostRefusal(str, Enum):
     UNRESOLVABLE = "that hostname does not resolve"
@@ -126,6 +128,49 @@ def _judge(raw: str, all_addresses: list[str]) -> HostVerdict:
                                f"{raw} maps to {mapped}", resolved)
 
     return HostVerdict(True, resolved=resolved)
+
+
+class HostRefused(RuntimeError):
+    """The host no longer passes check_host. Raised at connect time."""
+
+
+def external_url(*, username: str, password: str, host: str, port: int,
+                 database: str) -> URL:
+    """The URL for an external warehouse, built from its parts.
+
+    Never by pasting strings. The first version did
+    f"postgresql+psycopg://{username}:{password}@{host}..." -- and a password
+    of `x@127.0.0.1:5432/harbor_dw?` moved the connection to a host that
+    check_host never saw, because the URL parser stops the password at the
+    first `@`. URL.create escapes each part, so no part can become another.
+    """
+    return URL.create(
+        "postgresql+psycopg",
+        username=username, password=password,
+        host=host, port=port, database=database,
+        query={"sslmode": "require"},
+    )
+
+
+def pin(url: URL, verdict: HostVerdict | None = None) -> URL:
+    """Connect to exactly the address that was judged, and nothing else.
+
+    Checking a name and then handing the NAME to libpq is a race: libpq
+    resolves it again, and a record with a zero TTL can answer with a public
+    address for the check and a private one for the connection (DNS
+    rebinding). `hostaddr` makes libpq connect to the address that passed;
+    `host` is still sent, for TLS.
+
+    Called at registration and again every time an engine is built, because
+    what a name resolves to next week is not what it resolved to today.
+    """
+    verdict = verdict or check_host(url.host or "", url.port or 5432)
+    if not verdict.allowed:
+        raise HostRefused(verdict.reason)
+    # IPv4 first: a server with no IPv6 route would otherwise fail on a host
+    # that publishes both.
+    address = sorted(verdict.resolved, key=lambda a: (":" in a, a))[0]
+    return url.update_query_dict({"sslmode": "require", "hostaddr": address})
 
 
 def require_tls(dsn: str) -> str:

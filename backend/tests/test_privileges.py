@@ -12,6 +12,10 @@ Everything above the database can be re-read and re-reasoned about. These
 assertions ask Postgres itself, which cannot be argued with.
 
     make bootstrap && make test-privileges
+
+After the six come the assertions about tenants and the application role,
+which only exist because of bugs the first version had: every question ran on
+one warehouse, and the API connected to its own database as a superuser.
 """
 
 from __future__ import annotations
@@ -20,15 +24,19 @@ import os
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.engine import make_url
 
-WAREHOUSE = os.environ.get("TEST_WAREHOUSE", "northwind_dw")
+RUNTIME_ROLES = ("speakql_ro", "speakql_write", "speakql_edits_rw",
+                 "speakql_upload_ddl", "speakql_app")
 
 
 def _dsn(env_name: str) -> str:
     dsn = os.environ.get(env_name, "").strip()
-    if not dsn:
-        pytest.skip(f"{env_name} is not set; run `make bootstrap` first")
+    # Not merely "set": test_api.py points every DSN at in-memory SQLite when
+    # it is collected first, and these questions only Postgres can answer.
+    if not dsn.startswith("postgresql"):
+        pytest.skip(f"{env_name} does not point at Postgres; run "
+                    "`make bootstrap && make test-privileges`")
     return dsn
 
 
@@ -137,19 +145,85 @@ def test_edits_role_holds_nothing_on_public(edits):
 # --------------------------------------------------------------- 6 of 6 ----
 def test_no_runtime_role_can_create_a_database_or_a_role(ro):
     """Only speakql_owner may, and the API never loads its DSN. config.py does
-    not define the variable, so an accidental import fails at import time."""
+    not define the variable, and refuses to start if any runtime DSN names it.
+
+    Five roles, including speakql_app -- the role the API reaches its own
+    database with. The first version used speakql_owner there instead.
+    """
     with ro.connect() as conn:
         rows = conn.execute(text(
-            "SELECT rolname, rolcreatedb, rolcreaterole, rolsuper FROM pg_roles "
-            "WHERE rolname IN "
-            "('speakql_ro','speakql_write','speakql_edits_rw','speakql_upload_ddl')"
-        )).mappings().all()
+            "SELECT rolname, rolcreatedb, rolcreaterole, rolsuper, rolbypassrls "
+            "FROM pg_roles WHERE rolname = ANY(:roles)"
+        ), {"roles": list(RUNTIME_ROLES)}).mappings().all()
 
-    assert len(rows) == 4, f"expected four runtime roles, found {len(rows)}"
+    found = {row["rolname"] for row in rows}
+    assert found == set(RUNTIME_ROLES), f"missing roles: {set(RUNTIME_ROLES) - found}"
     for row in rows:
         assert not row["rolcreatedb"], f"{row['rolname']} can create databases"
         assert not row["rolcreaterole"], f"{row['rolname']} can create roles"
         assert not row["rolsuper"], f"{row['rolname']} is a superuser"
+        assert not row["rolbypassrls"], f"{row['rolname']} bypasses row security"
+
+
+# ------------------------------------------------------ beyond the six ----
+def _on(database: str):
+    """speakql_ro on another warehouse: the same role, a different database --
+    exactly what db/tenant_engine.py builds for a connection."""
+    return create_engine(make_url(_dsn("RO_DSN")).set(database=database), future=True)
+
+
+def test_the_two_tenants_warehouses_answer_differently():
+    """If these agreed, a question run on the wrong tenant's warehouse would
+    return the right-looking answer and no test could tell. They must differ
+    -- sql/22_second_tenant.sql is what makes them."""
+    answers = {}
+    for database in ("northwind_dw", "harbor_dw"):
+        engine = _on(database)
+        try:
+            with engine.connect() as conn:
+                answers[database] = (
+                    conn.execute(text("SELECT current_database()")).scalar_one(),
+                    conn.execute(text(
+                        "SELECT string_agg(region_name, ',' ORDER BY region_id) "
+                        "FROM public.regions")).scalar_one(),
+                    conn.execute(text("SELECT sum(amount) FROM public.orders")).scalar_one(),
+                )
+        finally:
+            engine.dispose()
+
+    northwind, harbor = answers["northwind_dw"], answers["harbor_dw"]
+    assert northwind[0] == "northwind_dw" and harbor[0] == "harbor_dw"
+    assert northwind[1] != harbor[1], "the two tenants have the same regions"
+    assert northwind[2] != harbor[2], "the two tenants have the same order totals"
+    assert harbor[1].startswith("Harbor ")
+
+
+@pytest.mark.parametrize("role", ["speakql_ro", "speakql_write",
+                                  "speakql_edits_rw", "speakql_upload_ddl"])
+def test_no_warehouse_role_can_log_in_to_the_application_database(ro, role):
+    """speakql_meta holds every organisation's registry, grants and logs.
+    Postgres grants CONNECT to PUBLIC by default; bootstrap revokes it, so
+    only speakql_app -- which owns the database -- may connect."""
+    with ro.connect() as conn:
+        held = conn.execute(
+            text("SELECT has_database_privilege(:role, 'speakql_meta', 'CONNECT')"),
+            {"role": role},
+        ).scalar_one()
+    assert not held, f"{role} can connect to speakql_meta"
+
+
+def test_the_application_role_cannot_read_a_warehouse(ro):
+    """speakql_app owns the metadata and nothing else. It reaches no
+    customer's data: questions go through speakql_ro, built per connection."""
+    with ro.connect() as conn:
+        connect = conn.execute(text(
+            "SELECT has_database_privilege('speakql_app', current_database(), 'CONNECT')"
+        )).scalar_one()
+        select = conn.execute(text(
+            "SELECT has_table_privilege('speakql_app', 'public.orders', 'SELECT')"
+        )).scalar_one()
+    assert not connect, "speakql_app can connect to a warehouse"
+    assert not select, "speakql_app can read a warehouse table"
 
 
 # ------------------------------------------------------------- and a 7th ----

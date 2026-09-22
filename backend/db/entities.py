@@ -94,14 +94,15 @@ class Person(Base):
 
 
 class Connection(Base):
-    """A registered external database, or the home of an uploaded dataset."""
+    """A warehouse on this server, a registered external database, or the home
+    of an organisation's uploaded datasets."""
 
     __tablename__ = "connections"
 
     id: Mapped[int] = _pk()
     org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False)  # external | uploaded
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # internal | external | uploaded
     host: Mapped[Optional[str]] = mapped_column(Text)
     port: Mapped[Optional[int]] = mapped_column(Integer)
     database_name: Mapped[str] = mapped_column(Text, nullable=False)

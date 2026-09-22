@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import delete, text
+from sqlalchemy import bindparam, delete, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -34,23 +34,48 @@ JOIN information_schema.tables t
   ON t.table_schema = c.table_schema AND t.table_name = c.table_name
 WHERE t.table_type = 'BASE TABLE'
   AND c.table_schema NOT IN :skip
+  {only}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position
 """
 
-# The default editable list: every table with a single-column primary key.
-# A composite key is excluded for now -- the edit path scopes by one column,
-# and pretending otherwise would fail at the worst moment.
+# The default editable list: every table with a SINGLE-column primary key.
+# A composite key is excluded -- the edit path scopes by one column, and
+# pretending otherwise would fail at the worst moment.
+#
+# Read from pg_catalog, NOT information_schema. The information_schema
+# constraint views show a constraint only to a role that owns the table or
+# holds some privilege on it OTHER than SELECT -- and this runs as speakql_ro,
+# which holds SELECT and nothing else. The first version used them, and on a
+# real bootstrap found "0 editable" tables in a warehouse where every table
+# has a primary key: the correction workflow had nothing to correct.
 _PRIMARY_KEYS_SQL = """
-SELECT tc.table_schema, tc.table_name, kcu.column_name
-FROM information_schema.table_constraints tc
-JOIN information_schema.key_column_usage kcu
-  ON kcu.constraint_name = tc.constraint_name
- AND kcu.table_schema = tc.table_schema
-WHERE tc.constraint_type = 'PRIMARY KEY'
-  AND tc.table_schema NOT IN :skip
-GROUP BY tc.table_schema, tc.table_name, kcu.column_name
-HAVING count(*) OVER (PARTITION BY tc.table_schema, tc.table_name) = 1
+SELECT n.nspname AS table_schema, c.relname AS table_name,
+       a.attname AS column_name
+FROM pg_constraint con
+JOIN pg_class c      ON c.oid = con.conrelid
+JOIN pg_namespace n  ON n.oid = c.relnamespace
+JOIN pg_attribute a  ON a.attrelid = c.oid AND a.attnum = con.conkey[1]
+WHERE con.contype = 'p'
+  AND cardinality(con.conkey) = 1
+  AND c.relkind = 'r'
+  AND n.nspname NOT IN :skip
+  {only}
 """
+
+
+def _statement(template: str, column: str, only_schemas):
+    """Bind the schema lists as EXPANDING parameters.
+
+    `IN :skip` with a plain tuple binds the tuple as one value, which psycopg 3
+    will not expand into a list -- another bug the first version would have hit
+    on its first real run.
+    """
+    only_clause = f"AND {column} IN :only" if only_schemas else ""
+    stmt = text(template.format(only=only_clause))
+    params = [bindparam("skip", expanding=True)]
+    if only_schemas:
+        params.append(bindparam("only", expanding=True))
+    return stmt.bindparams(*params)
 
 
 @dataclass
@@ -67,19 +92,29 @@ class IntrospectionResult:
         )
 
 
-def introspect(meta: Session, engine: Engine, connection_id: int) -> IntrospectionResult:
+def introspect(meta: Session, engine: Engine, connection_id: int, *,
+               only_schemas: tuple[str, ...] | None = None) -> IntrospectionResult:
     """Replace the registry for one connection, in one transaction.
 
     Replace rather than merge: a column that was dropped upstream must vanish
     from the registry, or the retriever will keep offering it to the generator
     and the generator will keep writing SQL that fails.
+
+    `only_schemas` restricts what is read. It matters for uploaded datasets,
+    which live in per-organisation schemas inside a database every
+    organisation's uploads share: introspecting the whole database would put
+    another organisation's table names into this organisation's registry.
     """
+    params: dict = {"skip": list(_SKIP_SCHEMAS)}
+    if only_schemas:
+        params["only"] = list(only_schemas)
+
     with engine.connect() as conn:
         columns = conn.execute(
-            text(_COLUMNS_SQL).bindparams(skip=_SKIP_SCHEMAS)
+            _statement(_COLUMNS_SQL, "c.table_schema", only_schemas), params
         ).all()
         primary_keys = conn.execute(
-            text(_PRIMARY_KEYS_SQL).bindparams(skip=_SKIP_SCHEMAS)
+            _statement(_PRIMARY_KEYS_SQL, "n.nspname", only_schemas), params
         ).all()
 
     meta.execute(delete(SchemaColumn).where(SchemaColumn.connection_id == connection_id))

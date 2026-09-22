@@ -1,16 +1,41 @@
 # SpeakQL backend stack (Backend Plan §4).
 #
-# Three services here. The fourth, `web`, lives on the Full-Stack branch --
-# this branch is the backend alone.
+# The fourth service, `web`, lives on the Full-Stack branch -- this branch is
+# the backend alone.
 #
 #   make up          db + api, with Gemma hosted
 #   make up-local    db + api + llm, with Gemma in a container
+#   make bootstrap   one-off: databases, roles, warehouses, demo seed
 #
 # `llm` sits behind a Compose profile so one file serves both hosting choices.
 # llm_client.py presents the same interface either way, which is the whole
 # reason that module exists.
+#
+# The owner's credentials reach exactly one container: the one-off `bootstrap`
+# service. The long-running `api` is never given them -- and config.py refuses
+# to start if any of its DSNs names a superuser.
 
 name: speakql-backend
+
+x-runtime-dsns: &runtime-dsns
+  # Inside the network the host is `db`, whatever .env says for local runs.
+  # META_DSN connects as speakql_app, a least-privilege role that owns the
+  # metadata tables. It is NOT the owner: the first version of this file used
+  # speakql_owner here, a superuser, which is precisely what the design
+  # promises the API never holds.
+  META_DSN:    postgresql+psycopg://speakql_app:${APP_PASSWORD:-app_dev}@db:5432/speakql_meta
+  # For the three warehouse roles only the credentials are used: the database
+  # name is swapped per connection by db/tenant_engine.py.
+  RO_DSN:      postgresql+psycopg://speakql_ro:${RO_PASSWORD:-ro_dev}@db:5432/northwind_dw
+  WRITE_DSN:   postgresql+psycopg://speakql_write:${WRITE_PASSWORD:-write_dev}@db:5432/northwind_dw
+  EDITS_DSN:   postgresql+psycopg://speakql_edits_rw:${EDITS_PASSWORD:-edits_dev}@db:5432/northwind_dw
+  UPLOADS_DSN: postgresql+psycopg://speakql_upload_ddl:${UPLOAD_PASSWORD:-upload_dev}@db:5432/speakql_uploads
+  # Not ${LLM_ENDPOINT}: compose reads .env for interpolation too, and .env's
+  # value is for running the API on the host (localhost) -- inside a container
+  # localhost is the container itself, so Gemma was never found. Set
+  # COMPOSE_LLM_ENDPOINT=http://host.docker.internal:11434 to use an Ollama
+  # running on the host instead of the llm service.
+  LLM_ENDPOINT: ${COMPOSE_LLM_ENDPOINT:-http://llm:11434}
 
 services:
   db:
@@ -24,7 +49,6 @@ services:
     volumes:
       - speakql_pgdata:/var/lib/postgresql/data
     healthcheck:
-      # pg_isready alone returns true before the server accepts writes
       test: ["CMD-SHELL", "pg_isready -U speakql_owner -d speakql_meta"]
       interval: 3s
       timeout: 3s
@@ -38,13 +62,9 @@ services:
     env_file:
       - .env
     environment:
-      # inside the network the host is `db`, whatever .env says for local runs
-      META_DSN:    postgresql+psycopg://speakql_owner:${POSTGRES_PASSWORD:-speakql_dev_owner}@db:5432/speakql_meta
-      RO_DSN:      postgresql+psycopg://speakql_ro:${RO_PASSWORD:-ro_dev}@db:5432/northwind_dw
-      WRITE_DSN:   postgresql+psycopg://speakql_write:${WRITE_PASSWORD:-write_dev}@db:5432/northwind_dw
-      EDITS_DSN:   postgresql+psycopg://speakql_edits_rw:${EDITS_PASSWORD:-edits_dev}@db:5432/northwind_dw
-      UPLOADS_DSN: postgresql+psycopg://speakql_upload_ddl:${UPLOAD_PASSWORD:-upload_dev}@db:5432/speakql_uploads
-      LLM_ENDPOINT: ${LLM_ENDPOINT:-http://llm:11434}
+      <<: *runtime-dsns
+      # Blanked explicitly, so a value in .env can never reach this container.
+      SPEAKQL_OWNER_DSN: ""
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -59,6 +79,22 @@ services:
         - action: rebuild
           path: requirements.txt
     restart: unless-stopped
+
+  # One-off. The only place the owner's credentials exist at runtime.
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["setup"]
+    env_file:
+      - .env
+    environment:
+      <<: *runtime-dsns
+      SPEAKQL_OWNER_DSN: postgresql://speakql_owner:${POSTGRES_PASSWORD:-speakql_dev_owner}@db:5432/postgres
+    command: ["bash", "scripts/bootstrap.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
 
   llm:
     image: ollama/ollama

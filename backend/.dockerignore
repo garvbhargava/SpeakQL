@@ -1,0 +1,15 @@
+# The Dockerfile does `COPY . .`. Without this file that copies .env -- every
+# role password and the JWT signing key -- into an image layer, where it stays
+# even if a later layer deletes it. Compose passes .env at runtime instead.
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.git/
+*.log

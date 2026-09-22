@@ -224,6 +224,48 @@ def plan(raw: bytes, *, table_name: str) -> IngestPlan:
     )
 
 
+_TRUE = {"true", "t", "yes", "y", "1"}
+_FALSE = {"false", "f", "no", "n", "0"}
+
+
+def coerce(value: str | None, data_type: str):
+    """Turn one raw cell into what its inferred column type will accept.
+
+    Inference *recognises* "1,234" as a number and "31/03/2025" as a date;
+    Postgres will accept neither as written. Converting here is what makes the
+    load agree with the plan the uploader was shown.
+    """
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if raw == "":
+        return None
+
+    if data_type in ("bigint", "numeric"):
+        cleaned = raw.replace(",", "")
+        try:
+            return int(cleaned) if data_type == "bigint" else float(cleaned)
+        except ValueError:
+            return None        # a stray non-number in a numeric column becomes empty
+
+    if data_type == "boolean":
+        lowered = raw.lower()
+        if lowered in _TRUE:
+            return True
+        if lowered in _FALSE:
+            return False
+        return None
+
+    if data_type == "date":
+        match = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", raw)
+        if match:
+            day, month, year = match.groups()
+            return f"{year}-{month}-{day}"
+        return raw
+
+    return raw
+
+
 def create_table_sql(schema: str, plan: IngestPlan) -> str:
     """DDL from a plan whose identifiers have already been sanitised.
 

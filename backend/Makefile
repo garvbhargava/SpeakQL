@@ -23,8 +23,10 @@ down:  ## stop everything, keep the data
 logs:  ## follow the api
 	$(COMPOSE) logs -f api
 
-bootstrap:  ## create databases, roles, warehouses and seed
-	$(COMPOSE) exec -T api bash scripts/bootstrap.sh
+bootstrap:  ## create databases, roles, warehouses and the demo seed
+	@# A one-off container: the only place the owner's credentials exist at
+	@# runtime. The long-running api container is never given them.
+	$(COMPOSE) run --rm bootstrap
 
 pull-model:  ## fetch Gemma into the llm container (~3 GB, once)
 	$(COMPOSE) exec -T llm ollama pull $${LLM_MODEL:-gemma3:4b}
