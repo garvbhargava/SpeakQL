@@ -45,6 +45,10 @@ class Generator(ABC):
 
 # ------------------------------------------------------------------ Gemma ----
 
+# The worked example is not decoration. Without it this model wrote
+# SUM(t2.orders.amount) -- a column of a table it had not joined -- on a
+# schema that carried every table it needed. With it, four of the five demo
+# questions came back correct instead of two.
 _SQL_INSTRUCTION = """\
 You write one PostgreSQL SELECT statement and nothing else.
 
@@ -52,9 +56,21 @@ Rules:
 - Output SQL only. No explanation, no markdown fence, no commentary.
 - Exactly one statement. Never more than one.
 - SELECT only. Never INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE or CREATE.
-- Use only the tables and columns given in the schema below.
+- Every column you name must appear in the schema below, under the table you
+  read it from. A column of a table you have not joined is not available:
+  join that table first, along the join path given under the schema.
+- Write joins as: FROM a JOIN b ON b.key = a.key. Never write t.other_table.col.
+- A value that was never recorded is NULL, not 0. "no X", "missing X" and
+  "X not recorded" mean X IS NULL.
 - If the question cannot be answered from this schema, output exactly:
   CANNOT_ANSWER
+
+Worked example, for a different schema:
+  schema:   CREATE TABLE staff ( staff_id integer NOT NULL, office_id integer NOT NULL REFERENCES offices (office_id), );
+            CREATE TABLE offices ( office_id integer NOT NULL, city text NOT NULL, );
+            CREATE TABLE hours ( staff_id integer NOT NULL REFERENCES staff (staff_id), logged numeric NULL, );
+  question: Which city logged the most hours?
+  answer:   SELECT o.city, SUM(h.logged) AS logged FROM hours h JOIN staff s ON s.staff_id = h.staff_id JOIN offices o ON o.office_id = s.office_id GROUP BY o.city ORDER BY logged DESC LIMIT 1
 """
 
 

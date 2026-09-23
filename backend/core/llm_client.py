@@ -30,7 +30,12 @@ from dataclasses import dataclass
 
 log = logging.getLogger("speakql.llm")
 
-REQUEST_TIMEOUT = 60  # seconds; a hung model must not hold a request open
+# Seconds. A hung model must not hold a request open -- but on a CPU-only
+# machine gemma3:4b legitimately needs most of a minute for a long schema, and
+# the first version's 60 s turned that into "no generator is available".
+REQUEST_TIMEOUT = 120
+# How long the server keeps the model in memory between questions.
+KEEP_ALIVE = "30m"
 
 
 class LLMUnavailable(RuntimeError):
@@ -101,7 +106,13 @@ class LLMClient:
     def complete(self, prompt: str, *, temperature: float = 0.0,
                  max_tokens: int = 512) -> Completion:
         """One completion. Temperature defaults to 0 because SQL generation is
-        not a creative task and a reproducible demo is worth more than variety."""
+        not a creative task and a reproducible demo is worth more than variety.
+
+        Note what is NOT sent: a `stop` sequence at `;`. It would make the
+        model's output look like a single statement whatever it generated, and
+        the validator has to see `SELECT 1; DROP TABLE orders` in full to
+        refuse it. Truncating before validation would hide the attempt.
+        """
         import time
         started = time.monotonic()
 
@@ -109,6 +120,10 @@ class LLMClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            # Without keep_alive the server unloads the model after five idle
+            # minutes and the next question pays a 3 GB reload -- on the CPU
+            # demo machine that alone is most of a minute.
+            "keep_alive": KEEP_ALIVE,
             "options": {"temperature": temperature, "num_predict": max_tokens},
         }).encode()
 
@@ -133,6 +148,19 @@ class LLMClient:
             raise LLMUnavailable(f"{self.model} returned an empty completion")
 
         return Completion(text=text, model=self.model, elapsed_ms=elapsed)
+
+    def warm(self) -> bool:
+        """Load the model now, so the first question does not wait for it.
+
+        Called in a background thread at startup: a demo where the first
+        question takes a minute and the second takes five seconds looks like
+        an unreliable system, and it is only the loader.
+        """
+        try:
+            self.complete("SELECT 1", max_tokens=1)
+            return True
+        except LLMUnavailable:
+            return False
 
     def health(self) -> bool:
         try:

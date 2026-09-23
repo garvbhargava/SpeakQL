@@ -39,7 +39,9 @@ from core.context_resolver import resolve as resolve_context
 from core.explainer import explain
 from core.llm_client import LLMClient
 from core.router import Route, route
-from core.schema_retriever import Column, LexicalRetriever, to_schema_text
+from core.schema_retriever import (
+    Column, LexicalRetriever, complete_join_paths, to_schema_text,
+)
 from core.sql_generator import GemmaGenerator
 from core.validator import Permitted
 from core.executor import OverlaySpec
@@ -139,6 +141,9 @@ def ask(
             )
 
         retrieved = LexicalRetriever().search(question, columns)
+        # The tables a join has to pass through are added here rather than
+        # left to the generator to invent -- see complete_join_paths.
+        retrieved = complete_join_paths(retrieved, columns)
         schema_text = to_schema_text(retrieved, public_only=granted.is_viewer)
         if not schema_text:
             entry.outcome = Outcome.REFUSED
@@ -355,6 +360,7 @@ def _registry_columns(session, connection_id: int) -> list[Column]:
             schema_name=r.schema_name, table_name=r.table_name,
             column_name=r.column_name, data_type=r.data_type,
             description=r.description, is_public=r.is_public,
+            references_to=r.references_to, is_nullable=r.is_nullable,
         )
         for r in rows
     ]

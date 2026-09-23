@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -65,6 +66,11 @@ async def lifespan(application: FastAPI):
     client = LLMClient(mode=settings.llm_mode, model=settings.llm_model,
                        endpoint=settings.llm_endpoint)
     application.state.llm = client if client.health() else None
+    if application.state.llm is not None:
+        # In the background: loading 3 GB must not delay the port opening,
+        # and /health is allowed to say "reachable" before it finishes.
+        threading.Thread(target=client.warm, daemon=True,
+                         name="speakql-warm-llm").start()
     if application.state.llm is None:
         log.warning(
             "%s is not reachable at %s. Questions will fail until it is; "

@@ -109,8 +109,22 @@ CREATE TABLE IF NOT EXISTS schema_registry (
     data_type      TEXT    NOT NULL,
     description    TEXT    NULL,
     is_public      BOOLEAN NOT NULL DEFAULT FALSE,
+    -- "schema.table.column" this column points at, for a single-column foreign
+    -- key. It is how the generator learns the join path: without it, a model
+    -- asked for sales by region joins orders straight to regions on a
+    -- region_id that orders does not have.
+    references_to  TEXT    NULL,
+    -- Whether the column accepts NULL. "How many shipments have no units
+    -- recorded" is IS NULL, and a generator that cannot see this writes
+    -- units = 0.
+    is_nullable    BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (connection_id, schema_name, table_name, column_name)
 );
+
+-- Added after the first version of this file. Idempotent, so bootstrap can be
+-- run again over a database created before they existed.
+ALTER TABLE schema_registry ADD COLUMN IF NOT EXISTS references_to TEXT NULL;
+ALTER TABLE schema_registry ADD COLUMN IF NOT EXISTS is_nullable BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- -------------------------------------------------------- editable_tables ----
 -- Default: every table with a primary key. A change that cannot be pinned to
