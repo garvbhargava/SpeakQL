@@ -36,10 +36,20 @@ class Column:
     data_type: str
     description: str | None = None
     is_public: bool = False
+    # "schema.table.column" this column points at, for a single-column foreign
+    # key. The join path, taken from the catalogue instead of guessed.
+    references_to: str | None = None
+    is_nullable: bool = True
 
     @property
     def qualified_table(self) -> str:
         return f"{self.schema_name}.{self.table_name}"
+
+    @property
+    def references_table(self) -> str | None:
+        if not self.references_to:
+            return None
+        return self.references_to.rsplit(".", 1)[0]
 
 
 @dataclass
@@ -47,6 +57,9 @@ class Scored:
     table: str
     score: float
     columns: list[Column]
+    # True when retrieval did not choose this table: a join has to pass
+    # through it to connect two tables that retrieval did choose.
+    bridge: bool = False
 
     @property
     def above_cutoff(self) -> bool:
@@ -174,28 +187,164 @@ class EmbeddingRetriever(Retriever):
         raise NotImplementedError("FAISS index is built in phase 3")
 
 
+# ---------------------------------------------------------- join paths ----
+
+def _fk_graph(columns: list[Column]) -> dict[str, set[str]]:
+    """Which tables are joinable to which, from the foreign keys alone."""
+    graph: dict[str, set[str]] = {}
+    for column in columns:
+        target = column.references_table
+        if not target:
+            continue
+        graph.setdefault(column.qualified_table, set()).add(target)
+        graph.setdefault(target, set()).add(column.qualified_table)
+    return graph
+
+
+def _path(graph: dict[str, set[str]], start: str, goal: str,
+          limit: int = 4) -> list[str]:
+    """Shortest join path between two tables, breadth first. [] if none."""
+    if start == goal:
+        return [start]
+    seen = {start}
+    queue: list[list[str]] = [[start]]
+    while queue:
+        path = queue.pop(0)
+        if len(path) > limit:
+            return []
+        for neighbour in sorted(graph.get(path[-1], ())):
+            if neighbour == goal:
+                return path + [neighbour]
+            if neighbour not in seen:
+                seen.add(neighbour)
+                queue.append(path + [neighbour])
+    return []
+
+
+def complete_join_paths(scored: list[Scored], columns: list[Column], *,
+                        limit: int = 3) -> list[Scored]:
+    """Add the tables a join has to pass through.
+
+    Retrieval scores each table against the question, so it picks `orders` and
+    `regions` for "sales by region" and misses `customers`, which the question
+    never mentions and which is the only way to get from one to the other. A
+    generator handed those two tables and nothing else invents a join key --
+    `orders.region_id`, which does not exist. Every model did it; the fix is
+    not a better model, it is giving it the path.
+    """
+    chosen = [s for s in scored if s.above_cutoff]
+    if len(chosen) < 2:
+        return scored
+
+    graph = _fk_graph(columns)
+    by_table: dict[str, list[Column]] = {}
+    for column in columns:
+        by_table.setdefault(column.qualified_table, []).append(column)
+
+    present = {s.table for s in chosen}
+    added: list[Scored] = []
+    anchor = chosen[0].table
+
+    for other in (s.table for s in chosen[1:]):
+        for step in _path(graph, anchor, other):
+            if step in present or len(added) >= limit:
+                continue
+            if step not in by_table:
+                continue
+            present.add(step)
+            added.append(Scored(step, CUTOFF, by_table[step], bridge=True))
+
+    return scored + added
+
+
 # ------------------------------------------------------------ formatting ----
+
+def _visible(item: Scored, public_only: bool) -> list[Column]:
+    return [c for c in item.columns if (c.is_public or not public_only)]
+
 
 def to_schema_text(scored: list[Scored], *, public_only: bool = False) -> str:
     """Render the retrieved subset for the generator's prompt.
 
     CREATE TABLE form, because that is what the model saw during
-    pre-training -- it reads a schema far better as DDL than as prose.
+    pre-training -- it reads a schema far better as DDL than as prose. Foreign
+    keys are included: they are the join path, and a model that has to guess
+    one guesses wrong.
     """
     blocks: list[str] = []
     for item in scored:
         if not item.above_cutoff:
             continue
-        cols = [c for c in item.columns if (c.is_public or not public_only)]
+        cols = _visible(item, public_only)
         if not cols:
             continue
-        lines = [f"CREATE TABLE {item.table} ("]
+        header = f"CREATE TABLE {item.table} ("
+        if item.bridge:
+            header += "   -- joins the tables above"
+        lines = [header]
         for column in cols:
+            reference = (f" REFERENCES {column.references_to.rsplit('.', 1)[0]} "
+                         f"({column.references_to.rsplit('.', 1)[1]})"
+                         if column.references_to else "")
+            # NULL is stated, not left out: "no units recorded" is IS NULL,
+            # and a model that cannot see which columns are nullable writes
+            # units = 0 instead.
+            null = " NULL" if column.is_nullable else " NOT NULL"
             comment = f"  -- {column.description}" if column.description else ""
-            lines.append(f"    {column.column_name} {column.data_type},{comment}")
+            lines.append(
+                f"    {column.column_name} {column.data_type}{null}{reference},{comment}"
+            )
         lines.append(");")
         blocks.append("\n".join(lines))
+
+    if not blocks:
+        return ""
+
+    # The joins spelled out, as equalities. The same facts are in the
+    # REFERENCES clauses above, but a 4B model reads the list and guesses at
+    # the clauses -- it wrote SUM(t2.orders.amount) against a schema that
+    # carried both tables until this was added.
+    included = {s.table for s in scored if s.above_cutoff}
+    joins = sorted({
+        f"{c.qualified_table}.{c.column_name} = {c.references_to}"
+        for s in scored if s.above_cutoff
+        for c in _visible(s, public_only)
+        if c.references_to and c.references_table in included
+    })
+    if joins:
+        blocks.append("-- join path:\n" + "\n".join(f"--   {j}" for j in joins))
+
     return "\n\n".join(blocks)
+
+
+def to_compact_schema(scored: list[Scored], *, public_only: bool = False) -> str:
+    """One line per table, for CodeT5.
+
+    A 60M-parameter model pays for every token, and its input window is 512:
+    DDL spends most of it on punctuation. **This function is the contract
+    between training and inference** -- ml/ serialises the training pairs with
+    it, so a change here without retraining changes what the model is asked
+    and quietly costs accuracy.
+    """
+    parts: list[str] = []
+    for item in scored:
+        if not item.above_cutoff:
+            continue
+        cols = _visible(item, public_only)
+        if not cols:
+            continue
+        rendered = []
+        for column in cols:
+            mark = "?" if column.is_nullable else ""
+            if column.references_to:
+                target = column.references_to.split(".")
+                rendered.append(
+                    f"{column.column_name}{mark} -> {target[-2]}.{target[-1]}")
+            else:
+                rendered.append(f"{column.column_name}{mark}")
+        name = item.table.split(".")[-1] if item.table.startswith("public.") else item.table
+        parts.append(f"{name} : {' , '.join(rendered)}")
+    return " | ".join(parts)
 
 
 def permitted_from(scored: list[Scored]) -> frozenset[str]:

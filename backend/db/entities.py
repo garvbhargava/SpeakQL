@@ -174,6 +174,12 @@ class SchemaColumn(Base):
     data_type: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # "schema.table.column" for a single-column foreign key: the join path,
+    # recorded so the generator does not have to guess it.
+    references_to: Mapped[Optional[str]] = mapped_column(Text)
+    # Nullable columns are where "not recorded" lives. Without this the
+    # generator writes units = 0 for "shipments with no units".
+    is_nullable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
         UniqueConstraint("connection_id", "schema_name", "table_name", "column_name"),
