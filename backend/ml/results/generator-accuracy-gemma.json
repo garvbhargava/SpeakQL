@@ -1,0 +1,258 @@
+{
+  "codet5-small": {
+    "model": "codet5-small (Spider then warehouse)",
+    "n": 299,
+    "exact": 134,
+    "execution": 166,
+    "validator": 299,
+    "unrunnable_gold": 0,
+    "errors": 0,
+    "by_kind": {
+      "new phrasing": {
+        "n": 279,
+        "exact": 130,
+        "execution": 161,
+        "validator": 279,
+        "exact_pct": 46.6,
+        "execution_pct": 57.7,
+        "validator_pct": 100.0
+      },
+      "new shape": {
+        "n": 20,
+        "exact": 4,
+        "execution": 5,
+        "validator": 20,
+        "exact_pct": 20.0,
+        "execution_pct": 25.0,
+        "validator_pct": 100.0
+      }
+    },
+    "examples": [
+      {
+        "question": "What did each region bring in?",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id GROUP BY r.region_name ORDER BY total_amount DESC",
+        "predicted": "SELECT r.region_name, COUNT(*) AS orders FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id GROUP BY r.region_name ORDER BY orders DESC"
+      },
+      {
+        "question": "Top region for December 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-12-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1",
+        "predicted": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1"
+      },
+      {
+        "question": "Top region for October 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-10-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1",
+        "predicted": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1"
+      },
+      {
+        "question": "Give me North's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'North'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'North'"
+      },
+      {
+        "question": "Give me South's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'South'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'South'"
+      },
+      {
+        "question": "Give me Central's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'Central'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'Central'"
+      },
+      {
+        "question": "Give me East's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'East'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'East'"
+      },
+      {
+        "question": "Sum of orders in October 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(amount) AS total_amount FROM orders WHERE order_date BETWEEN '2025-10-01' AND '2025-10-31'",
+        "predicted": "SELECT COUNT(*) AS orders FROM orders WHERE order_date BETWEEN '2025-11-01' AND '2025-11-30'"
+      }
+    ],
+    "seconds": 409.1,
+    "ms_per_question": 1368,
+    "exact_pct": 44.8,
+    "execution_pct": 55.5,
+    "validator_pct": 100.0
+  },
+  "gemma": {
+    "model": "gemma3:4b (off-the-shelf, sample of 40)",
+    "n": 40,
+    "exact": 0,
+    "execution": 4,
+    "validator": 35,
+    "unrunnable_gold": 0,
+    "errors": 2,
+    "by_kind": {
+      "new phrasing": {
+        "n": 36,
+        "exact": 0,
+        "execution": 3,
+        "validator": 31,
+        "exact_pct": 0.0,
+        "execution_pct": 8.3,
+        "validator_pct": 86.1
+      },
+      "new shape": {
+        "n": 4,
+        "exact": 0,
+        "execution": 1,
+        "validator": 4,
+        "exact_pct": 0.0,
+        "execution_pct": 25.0,
+        "validator_pct": 100.0
+      }
+    },
+    "examples": [
+      {
+        "question": "Money taken for Barrier film, 50 micron in the fourth quarter of 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(oi.qty * oi.unit_price) AS revenue FROM order_items AS oi JOIN products AS p ON p.product_id = oi.product_id JOIN orders AS o ON o.order_id = oi.order_id WHERE p.name = 'Barrier film, 50 micron' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'",
+        "predicted": "SELECT\n  p.name\nFROM public.products AS p\nJOIN public.order_items AS oi\n  ON p.product_id = oi.product_id\nJOIN public.orders AS o\n  ON oi.order_id = o.order_id\nWHERE\n  p.name = 'Barrier film, 50 micron' AND o.order_date LIKE '%2025%' AND o.order_date LIKE '%fourth quarter%';"
+      },
+      {
+        "question": "Money taken for Carton, 20 litre in Q4 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(oi.qty * oi.unit_price) AS revenue FROM order_items AS oi JOIN products AS p ON p.product_id = oi.product_id JOIN orders AS o ON o.order_id = oi.order_id WHERE p.name = 'Carton, 20 litre' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'",
+        "predicted": "SELECT CAST(p.name AS TEXT) FROM public.orders o JOIN public.customers c ON o.customer_id = c.customer_id JOIN public.products p ON o.amount = p.unit_cost WHERE c.name = 'Carton' AND o.order_date = '2025-04-01'"
+      },
+      {
+        "question": "How much did Redline ship in March 2025?",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(units) AS units FROM shipments WHERE carrier = 'Redline' AND shipped_on BETWEEN '2025-03-01' AND '2025-03-31'",
+        "predicted": "SELECT SUM(p.unit_cost * o_i.qty) AS total_shipment\nFROM order_items o_i\nJOIN products p ON p.product_id = o_i.product_id\nJOIN orders o ON o.order_id = o_i.order_id\nJOIN shipments s ON s.order_id = o.order_id\nWHERE s.shipped_on = '2025-03-01'\nLIMIT 1"
+      },
+      {
+        "question": "Number of orders per region",
+        "kind": "new shape",
+        "gold": "SELECT r.region_name, COUNT(*) AS orders FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id GROUP BY r.region_name ORDER BY orders DESC",
+        "predicted": "SELECT\n  r.region_name,\n  COUNT(o.order_id)\nFROM regions AS r\nJOIN customers AS c\n  ON r.region_id = c.region_id\nLEFT JOIN orders AS o\n  ON c.customer_id = o.customer_id\nGROUP BY\n  r.region_name\nORDER BY\n  COUNT(o.order_id) DESC\nLIMIT 1"
+      },
+      {
+        "question": "Give me Central's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'Central'",
+        "predicted": "SELECT\n  sum(p.unit_cost * i.qty)\nFROM order_items AS i\nJOIN products AS p\n  ON i.product_id = p.product_id\nJOIN orders AS o\n  ON i.order_id = o.order_id\nJOIN customers AS c\n  ON o.customer_id = c.customer_id\nWHERE\n  c.name = 'Central';"
+      },
+      {
+        "question": "Which month topped the sales chart?",
+        "kind": "new phrasing",
+        "gold": "SELECT DATE_TRUNC('MONTH', order_date) AS month, SUM(amount) AS total_amount FROM orders GROUP BY month ORDER BY total_amount DESC LIMIT 1",
+        "predicted": "SELECT\n    substr(o.order_date, 1, 2) AS month,\n    SUM(oi.qty) AS total_quantity\nFROM orders AS o\nJOIN order_items AS oi\n    ON oi.order_id = o.order_id\nGROUP BY substr(o.order_date, 1, 2)\nORDER BY total_quantity DESC\nLIMIT 1"
+      },
+      {
+        "question": "What did each month bring in?",
+        "kind": "new phrasing",
+        "gold": "SELECT DATE_TRUNC('MONTH', order_date) AS month, SUM(amount) AS total_amount FROM orders GROUP BY month ORDER BY month",
+        "predicted": "SELECT\n  EXTRACT(MONTH FROM o.order_date) AS month,\n  SUM(oi.qty) AS total_units\nFROM orders AS o\nJOIN order_items AS oi\n  ON o.order_id = oi.order_id\nGROUP BY\n  month\nORDER BY\n  month;"
+      },
+      {
+        "question": "Halloway Partners's orders during October 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT COUNT(*) AS orders FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'Halloway Partners' AND o.order_date BETWEEN '2025-10-01' AND '2025-10-31'",
+        "predicted": "SELECT\n  o.name,\n  COUNT(s.shipment_id)\nFROM orders AS o\nJOIN customers AS c\n  ON o.customer_id = c.customer_id\nJOIN regions AS r\n  ON c.region_id = r.region_id\nJOIN shipments AS s\n  ON s.order_id = o.order_id\nWHERE\n  EXTRACT(\n    MONTH FROM o.order_date\n  ) = 10 AND EXTRACT(\n    YEAR FROM o.order_date\n  ) = 2025\nGROUP BY\n  o.name;"
+      }
+    ],
+    "seconds": 987.2,
+    "ms_per_question": 24680,
+    "exact_pct": 0.0,
+    "execution_pct": 10.0,
+    "validator_pct": 87.5
+  },
+  "router": {
+    "model": "the router: codet5-small, Gemma below 0.55 (sample of 40)",
+    "n": 40,
+    "exact": 17,
+    "execution": 21,
+    "validator": 40,
+    "unrunnable_gold": 0,
+    "errors": 0,
+    "by_kind": {
+      "new phrasing": {
+        "n": 36,
+        "exact": 15,
+        "execution": 19,
+        "validator": 36,
+        "exact_pct": 41.7,
+        "execution_pct": 52.8,
+        "validator_pct": 100.0
+      },
+      "new shape": {
+        "n": 4,
+        "exact": 2,
+        "execution": 2,
+        "validator": 4,
+        "exact_pct": 50.0,
+        "execution_pct": 50.0,
+        "validator_pct": 100.0
+      }
+    },
+    "examples": [
+      {
+        "question": "Money taken for Barrier film, 50 micron in the fourth quarter of 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(oi.qty * oi.unit_price) AS revenue FROM order_items AS oi JOIN products AS p ON p.product_id = oi.product_id JOIN orders AS o ON o.order_id = oi.order_id WHERE p.name = 'Barrier film, 50 micron' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'",
+        "predicted": "SELECT SUM(oi.qty * oi.unit_price) AS revenue FROM order_items AS oi JOIN products AS p ON p.product_id = oi.product_id WHERE p.name = 'Barrier film, 50 micron' AND oi.order_date BETWEEN '2025-10-01' AND '2025-12-31'"
+      },
+      {
+        "question": "Count our carriers",
+        "kind": "new shape",
+        "gold": "SELECT COUNT(DISTINCT carrier) AS carriers FROM shipments",
+        "predicted": "SELECT carrier, COUNT(*) AS carriers FROM shipments GROUP BY carrier ORDER BY carrier DESC"
+      },
+      {
+        "question": "How much did Redline ship in March 2025?",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(units) AS units FROM shipments WHERE carrier = 'Redline' AND shipped_on BETWEEN '2025-03-01' AND '2025-03-31'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'Redline' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'"
+      },
+      {
+        "question": "Give me Central's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'Central'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'Central'"
+      },
+      {
+        "question": "What did each month bring in?",
+        "kind": "new phrasing",
+        "gold": "SELECT DATE_TRUNC('MONTH', order_date) AS month, SUM(amount) AS total_amount FROM orders GROUP BY month ORDER BY month",
+        "predicted": "SELECT DATE_TRUNC('MONTH', order_date) AS month, SUM(amount) AS total_amount FROM orders GROUP BY month ORDER BY total_amount DESC"
+      },
+      {
+        "question": "Halloway Partners's orders during October 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT COUNT(*) AS orders FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'Halloway Partners' AND o.order_date BETWEEN '2025-10-01' AND '2025-10-31'",
+        "predicted": "SELECT COUNT(*) AS orders FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'Halloway Partners' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'"
+      },
+      {
+        "question": "Price of CT-1180",
+        "kind": "new phrasing",
+        "gold": "SELECT name, unit_cost FROM products WHERE sku = 'CT-1180'",
+        "predicted": "SELECT SUM(oi.qty) AS quantity FROM order_items AS oi JOIN products AS p ON p.product_id = oi.product_id WHERE p.name = 'CT-1180'"
+      },
+      {
+        "question": "Give me North's total for November 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'North' AND o.order_date BETWEEN '2025-11-01' AND '2025-11-30'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'North' AND o.order_date BETWEEN '2025-11-01' AND '2025-11-30'"
+      }
+    ],
+    "seconds": 52.1,
+    "ms_per_question": 1302,
+    "exact_pct": 42.5,
+    "execution_pct": 52.5,
+    "validator_pct": 100.0,
+    "served": {
+      "local": 40,
+      "escalated": 0
+    }
+  }
+}
