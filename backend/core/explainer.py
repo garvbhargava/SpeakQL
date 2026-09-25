@@ -18,6 +18,7 @@ prompt right.
 
 from __future__ import annotations
 
+import decimal
 import logging
 from dataclasses import dataclass
 
@@ -123,6 +124,19 @@ def _sanitise(text: str) -> str:
     return cleaned
 
 
+def _value(value) -> str:
+    """Numbers with thousands separators; everything else as it stands."""
+    if isinstance(value, bool) or value is None:
+        return str(value)
+    if isinstance(value, (int, float, decimal.Decimal)):
+        return f"{value:,}"
+    return str(value)
+
+
+def _pairs(columns: list[str], row: tuple) -> str:
+    return ", ".join(f"{name} {_value(value)}" for name, value in zip(columns, row))
+
+
 def _deterministic(question: str, columns: list[str], rows: list[tuple],
                    source_columns: tuple[str, ...]) -> Explanation:
     """The always-available sentence, composed from facts rather than text.
@@ -134,11 +148,17 @@ def _deterministic(question: str, columns: list[str], rows: list[tuple],
     if not rows:
         text = "The query ran and returned no rows."
     elif len(rows) == 1 and len(columns) == 1:
-        text = f"{columns[0]} is {rows[0][0]}."
+        text = f"{columns[0]} is {_value(rows[0][0])}."
+    elif len(rows) == 1:
+        text = _pairs(columns, rows[0]) + "."
     else:
+        # Name the first row. "5 rows across 2 columns" is true and useless --
+        # with no model reachable this sentence is the entire explanation, and
+        # the reader wants the answer in it.
         text = (
             f"{len(rows)} row{'s' if len(rows) != 1 else ''} "
-            f"across {len(columns)} column{'s' if len(columns) != 1 else ''}."
+            f"across {len(columns)} column{'s' if len(columns) != 1 else ''}. "
+            f"The first is {_pairs(columns, rows[0])}."
         )
 
     if source_columns:
