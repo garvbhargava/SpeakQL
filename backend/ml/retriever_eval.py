@@ -41,6 +41,7 @@ def _spider_cases(limit: int | None = None) -> list[dict]:
             "question": row["question"],
             "gold": [t for t in row["tables"] if t in row["schema"]["tables"]],
             "tables": row["schema"]["tables"],
+            "foreign_keys": row["schema"]["foreign_keys"],
         })
         if limit and len(cases) >= limit:
             break
@@ -48,24 +49,29 @@ def _spider_cases(limit: int | None = None) -> list[dict]:
 
 
 def _warehouse_cases() -> list[dict]:
-    tables, _ = warehouse_schema()
+    tables, foreign_keys = warehouse_schema()
     return [
         {"question": row["question"],
          "gold": [t for t in row["tables"] if t in tables],
-         "tables": tables}
+         "tables": tables, "foreign_keys": foreign_keys}
         for row in read_jsonl(SYNTH / "test.jsonl")
         if [t for t in row["tables"] if t in tables]
     ]
 
 
+def _columns(case: dict):
+    """The case's schema as the registry would hold it, foreign keys and all."""
+    from ml.serialize import columns_for  # noqa: PLC0415
+
+    return columns_for(case["tables"], case.get("foreign_keys", []))
+
+
 # ------------------------------------------------------------- retrievers ---
 
 def _lexical_ranking(case: dict) -> list[str]:
-    from core.schema_retriever import Column, LexicalRetriever  # noqa: PLC0415
+    from core.schema_retriever import LexicalRetriever  # noqa: PLC0415
 
-    columns = [Column("public", table, column, "text")
-               for table, names in case["tables"].items() for column in names]
-    scored = LexicalRetriever().search(case["question"], columns,
+    scored = LexicalRetriever().search(case["question"], _columns(case),
                                        k=len(case["tables"]))
     return [s.table.split(".")[-1] for s in scored]
 
@@ -94,13 +100,31 @@ def _embedding_ranking(model, cases: list[dict]) -> list[list[str]]:
     return rankings
 
 
-def recall_at_k(rankings: list[list[str]], cases: list[dict]) -> dict[str, float]:
+def _completed(ranking: list[str], case: dict, k: int) -> set[str]:
+    """The tables the pipeline would actually send: the top k, plus whatever a
+    join between them has to pass through."""
+    from core.schema_retriever import Scored, complete_join_paths  # noqa: PLC0415
+
+    columns = _columns(case)
+    by_table: dict[str, list] = {}
+    for column in columns:
+        by_table.setdefault(column.table_name, []).append(column)
+
+    scored = [Scored(f"public.{name}", 0.9, by_table[name])
+              for name in ranking[:k] if name in by_table]
+    completed = complete_join_paths(scored, columns)
+    return {s.table.split(".")[-1] for s in completed if s.above_cutoff}
+
+
+def recall_at_k(rankings: list[list[str]], cases: list[dict], *,
+                join_paths: bool = False) -> dict[str, float]:
     out: dict[str, float] = {}
     for k in KS:
-        covered = sum(
-            1 for ranking, case in zip(rankings, cases)
-            if set(case["gold"]) <= set(ranking[:k])
-        )
+        covered = 0
+        for ranking, case in zip(rankings, cases):
+            sent = (_completed(ranking, case, k) if join_paths
+                    else set(ranking[:k]))
+            covered += set(case["gold"]) <= sent
         out[f"recall@{k}"] = round(covered / max(1, len(cases)), 4)
     return out
 
@@ -109,27 +133,38 @@ def evaluate(name: str, cases: list[dict]) -> dict[str, dict]:
     from sentence_transformers import SentenceTransformer  # noqa: PLC0415
 
     results: dict[str, dict] = {}
+    rankings_by_model: dict[str, list[list[str]]] = {}
 
     started = time.monotonic()
-    results["lexical"] = recall_at_k([_lexical_ranking(c) for c in cases], cases)
+    rankings_by_model["lexical"] = [_lexical_ranking(c) for c in cases]
+    results["lexical"] = recall_at_k(rankings_by_model["lexical"], cases)
     results["lexical"]["seconds"] = round(time.monotonic() - started, 1)
 
     for label, path in (("minilm-off-the-shelf", "sentence-transformers/all-MiniLM-L6-v2"),
                         ("minilm-fine-tuned", str(RETRIEVER))):
-        if label == "minilm-fine-tuned" and not RETRIEVER.exists():
+        if label == "minilm-fine-tuned" and not (RETRIEVER / "config.json").exists():
             print(f"  {label}: not trained yet, skipped")
             continue
         started = time.monotonic()
         model = SentenceTransformer(path)
-        rankings = _embedding_ranking(model, cases)
-        results[label] = recall_at_k(rankings, cases)
+        rankings_by_model[label] = _embedding_ranking(model, cases)
+        results[label] = recall_at_k(rankings_by_model[label], cases)
         results[label]["seconds"] = round(time.monotonic() - started, 1)
 
+    # And what the pipeline actually sends: retrieval PLUS join-path
+    # completion. Retrieval scores each table against the question on its own,
+    # so it cannot score a table the question never mentions -- and a join has
+    # to pass through exactly those. Measuring retrieval alone measures a
+    # component; this measures the step.
+    for label in list(results):
+        results[f"{label} + join paths"] = recall_at_k(
+            rankings_by_model[label], cases, join_paths=True)
+
     print(f"\n{name}: {len(cases)} questions")
-    header = "  {:<22}" + "".join(f"  {'recall@' + str(k):>10}" for k in KS)
+    header = "  {:<34}" + "".join(f"  {'recall@' + str(k):>10}" for k in KS)
     print(header.format("retriever"))
     for label, scores in results.items():
-        row = f"  {label:<22}" + "".join(
+        row = f"  {label:<34}" + "".join(
             f"  {scores[f'recall@{k}'] * 100:9.1f}%" for k in KS)
         print(row)
     return results
