@@ -101,6 +101,38 @@ services:
       db:
         condition: service_healthy
 
+  # Training, on the `train` profile. In a container because it takes hours on
+  # CPU and nothing about that should depend on a terminal staying open: the
+  # daemon owns it, every stage checkpoints as it goes, and a restart resumes.
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["train"]
+    env_file:
+      - .env
+    environment:
+      <<: *runtime-dsns
+      SPEAKQL_OWNER_DSN: ""
+      # The base models come from the hub on the first run. Serving stays
+      # offline. The cache goes inside the mounted ml/ directory: a named
+      # volume is created owned by root and this container is not root.
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+      HF_HOME: /srv/ml/.huggingface
+    volumes:
+      # Read-write, unlike the api container: this is what writes the
+      # checkpoints, and they land on the host where the API can mount them.
+      - ./ml:/srv/ml
+    command: ["bash", "scripts/train_all.sh"]
+    # The image's healthcheck curls the API, which this container is not.
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
   llm:
     image: ollama/ollama
     profiles: ["local-llm"]

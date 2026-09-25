@@ -16,3 +16,6 @@ ml/results/*.err
 # The synthetic pairs in ml/data/synth/ ARE committed: they are a deliverable,
 # every one of them was verified by running it, and the evaluation split has
 # to be the same split next week as it was today.
+
+# The model cache the trainer container fills.
+ml/.huggingface/

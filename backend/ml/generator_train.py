@@ -89,6 +89,10 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--limit", type=int, default=0,
                         help="use only N training rows -- for a smoke run")
+    parser.add_argument("--save-every", type=int, default=40,
+                        help="write the checkpoint every N optimiser steps")
+    parser.add_argument("--resume", action="store_true",
+                        help="carry on from this stage's own checkpoint if it exists")
     # Physical cores, not the sixteen logical processors: hyperthreads share
     # the same vector units, which is what this is bound by.
     parser.add_argument("--threads", type=int, default=10)
@@ -105,9 +109,19 @@ def main() -> None:
     torch.manual_seed(SEED)
     rng = random.Random(SEED)
 
+    destination = GENERATOR_STAGE1 if args.stage == 1 else GENERATOR
     start_from = BASE_MODEL if args.stage == 1 else str(GENERATOR_STAGE1)
-    if args.stage == 2 and not GENERATOR_STAGE1.exists():
+    if args.stage == 2 and not (GENERATOR_STAGE1 / "config.json").exists():
         raise SystemExit("stage 1 has not been trained yet; run --stage 1 first")
+
+    # Hours of CPU training must not depend on nothing interrupting it. The
+    # checkpoint is written every few minutes and --resume carries on from it,
+    # so the most an interruption can cost is those few minutes.
+    resumed_from = None
+    if args.resume and (destination / "config.json").exists():
+        start_from = str(destination)
+        resumed_from = str(destination)
+        print(f"resuming from {destination}")
 
     print(f"loading {start_from}")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
@@ -194,6 +208,11 @@ def main() -> None:
                 optimiser.zero_grad()
                 step += 1
 
+                if args.save_every and step % args.save_every == 0:
+                    destination.mkdir(parents=True, exist_ok=True)
+                    model.save_pretrained(destination)
+                    tokenizer.save_pretrained(destination)
+
                 if step % 25 == 0:
                     elapsed = time.monotonic() - started
                     rate = step / elapsed
@@ -223,13 +242,13 @@ def main() -> None:
         if done:
             break
 
-    destination = GENERATOR_STAGE1 if args.stage == 1 else GENERATOR
     destination.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(destination)
     tokenizer.save_pretrained(destination)
 
     record = {
         "stage": args.stage, "base_model": BASE_MODEL, "started_from": start_from,
+        "resumed_from": resumed_from,
         "examples": len(train), "epochs": args.epochs, "batch": args.batch,
         "accumulate": args.accumulate, "lr": args.lr, "steps": step,
         "max_input": MAX_INPUT, "max_target": MAX_TARGET,
