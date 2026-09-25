@@ -87,11 +87,34 @@ def balance(rows: list[dict], target: int, rng: random.Random) -> list[dict]:
 
     out: list[dict] = []
     for group in by_template.values():
-        if len(group) >= target:
-            out.extend(rng.sample(group, target))
-        else:
+        if len(group) <= target:
             out.extend(group)
             out.extend(rng.choice(group) for _ in range(target - len(group)))
+            continue
+
+        # Cutting a 178-pair template down to 25 AT RANDOM is how the first
+        # balanced model learned to answer every date question with the
+        # commonest range it had seen: asked for November it wrote Q4. So the
+        # cut goes round-robin over the distinct SQL targets instead, which
+        # keeps one of every month, region and carrier the template can say.
+        pools: dict[str, list[dict]] = {}
+        for row in group:
+            pools.setdefault(row["sql"], []).append(row)
+        ordered = list(pools.values())
+        for pool in ordered:
+            rng.shuffle(pool)
+        rng.shuffle(ordered)
+
+        picked: list[dict] = []
+        depth = 0
+        while len(picked) < target:
+            for pool in ordered:
+                if len(picked) >= target:
+                    break
+                picked.append(pool[depth % len(pool)])
+            depth += 1
+        out.extend(picked)
+
     rng.shuffle(out)
     return out
 
