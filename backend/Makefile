@@ -56,6 +56,9 @@ evaluate:  ## the recall table and the accuracy table
 
 models: data train-retriever train-generator evaluate  ## all of it, in order
 
+demo:  ## ask the running stack the demo questions, end to end
+	$(PY) scripts/demo.py
+
 test:  ## the whole suite
 	$(COMPOSE) exec -T api pytest
 

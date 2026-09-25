@@ -57,10 +57,22 @@ _SYSTEM_PROBE = re.compile(
     r"\b(pg_\w+|information_schema|system catalog|list (all )?(users|roles|databases)|"
     r"who (are|is) the (admin|superuser))\b", re.I,
 )
+# The qualifiers repeat: "ignore ALL PREVIOUS instructions" is the commonest
+# phrasing there is, and the first version of this allowed exactly one of them
+# -- so it caught "ignore previous instructions" and let the canonical form
+# through. Layer 1 is not the only defence (data is fenced, and the validator
+# refuses anything that is not a read-only SELECT) but it is the layer that is
+# supposed to catch this one.
 _INJECTION = re.compile(
-    r"(ignore (all |your |previous )?(instructions|rules|prompt)|"
-    r"disregard (the|your|all) (above|instructions|rules)|"
-    r"you are now|act as|system prompt|reveal your (prompt|instructions))", re.I,
+    r"("
+    r"(?:ignore|disregard|forget|override)\s+"
+    r"(?:all\s+|any\s+|the\s+|your\s+|previous\s+|prior\s+|above\s+|earlier\s+)*"
+    r"(?:instruction|rule|prompt|direction|guideline)s?|"
+    r"disregard\s+(?:the|your|all)\s+above|"
+    r"you are now|act as|pretend (?:to be|you are)|system prompt|"
+    r"(?:reveal|print|repeat|show|output)\s+(?:me\s+)?"
+    r"(?:your|the)\s+(?:system\s+)?(?:prompt|instructions)"
+    r")", re.I,
 )
 
 
