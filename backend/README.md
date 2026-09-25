@@ -10,7 +10,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![sqlglot](https://img.shields.io/badge/validator-sqlglot-8A2BE2)](https://github.com/tobymao/sqlglot)
 [![Gemma](https://img.shields.io/badge/LLM-gemma3%3A4b-4A9EFF)](https://ollama.com/library/gemma3)
-[![Tests](https://img.shields.io/badge/tests-152%20passing-3FD68B)](#testing)
+[![Tests](https://img.shields.io/badge/tests-218%20passing-3FD68B)](#testing)
 
 `Backend` · [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) · [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) · [`main`](https://github.com/garvbhargava/SpeakQL/tree/main)
 
@@ -69,6 +69,7 @@ query may run.
 
 | | |
 |---|---|
+| **Two models, trained in-house** | MiniLM finds the tables, CodeT5 writes the SQL; Gemma answers below the confidence threshold |
 | **Four safety layers** | Intent gatekeeper → AST validator → database role → edit validator |
 | **Read-only by construction** | Enforced at the grant, at the connection, and before execution |
 | **Multi-tenant isolation** | Company domains and personal workspaces, with a null-domain guarantee |
@@ -80,7 +81,8 @@ query may run.
 | **Prompt-injection defence** | Warehouse values are fenced as data; explainer output cannot act |
 | **SSRF defence** | External hosts are *resolved* then judged, and the connection is pinned to the address that passed |
 | **Sign-in abuse controls** | Five-attempt lockout, 60 s resend cooldown, hourly caps per address and per network |
-| **Honest measurement** | `query_log` gets a row on every path: answered, refused, blocked, failed |
+| **Join paths, not guesses** | Foreign keys come from the catalogue, so the generator is never left to invent one |
+| **Honest measurement** | `query_log` gets a row on every path: answered, refused, blocked, failed — with the generator and its confidence |
 
 ---
 
@@ -96,13 +98,14 @@ question
    │
    ▼
 ┌──────────────────┐   retrieval    ┌─────────────────────────────┐
-│ schema_retriever │ ─────────────► │  MiniLM bi-encoder + FAISS  │
+│ schema_retriever │ ─────────────► │  Model A · MiniLM + FAISS   │
 └──────────────────┘                └─────────────────────────────┘
-   │  only the relevant tables — never the whole schema
-   ▼
+   │  the relevant tables — never the whole schema
+   ▼  + the tables a join must pass through, from the foreign keys
 ┌──────────────────┐   generation   ┌─────────────────────────────┐
-│  sql_generator   │ ─────────────► │  CodeT5  ·  Gemma fallback  │
-└──────────────────┘                └─────────────────────────────┘
+│  sql_generator   │ ─────────────► │  Model B · CodeT5-small     │
+└──────────────────┘                │  Gemma, below the threshold │
+   │                                └─────────────────────────────┘
    │  candidate SQL + confidence
    ▼  layer 2 · AST validator — the model is never consulted
 ┌──────────────────┐
@@ -137,6 +140,60 @@ answer + chart + explanation + the SQL   →   query_log
 | Generation | CodeT5-small, fine-tuned | 60M parameters, trained in-house |
 | Fallback LLM | Gemma `gemma3:4b` via Ollama | Local, open-weight, **never used for safety** |
 | Auth | PyJWT + HMAC-SHA256 OTP | Passwordless: six-digit codes, no password anywhere |
+
+---
+
+## The two models
+
+Both are trained in-house, on this machine, on a CPU. **Both are optional at
+runtime**: with no checkpoint the pipeline retrieves lexically and generates
+with Gemma — which is not a degraded mode so much as the off-the-shelf
+baseline the comparative study measures against. `/health` says which is
+loaded.
+
+| | Model A — retrieval | Model B — generation |
+|---|---|---|
+| Base | `all-MiniLM-L6-v2`, 22M | `Salesforce/codet5-small`, 60M |
+| Job | which tables is this question about | question + those tables → SQL |
+| Trained on | Spider gold tables + this warehouse's pairs, contrastive with one hard negative per example | Spider (7,000 questions, 140 databases), then this warehouse's verified pairs |
+| Confidence | cosine, used to rank | the length-normalised beam score — the number the router routes on |
+| Absent | lexical overlap (the baseline) | Gemma writes every query |
+
+### The data
+
+| Set | Size | What it is |
+|---|---|---|
+| Spider 1.0 | 7,000 train / 1,034 dev | 200 databases, dev databases never seen in training. `python -m ml.spider_prep` |
+| Synthetic pairs | 1,329 | Generated over *this* warehouse from 48 question templates and **executed before being kept** — a pair that does not run is not training data, it is a lie the model learns |
+
+The synthetic test split is held out two ways, and they are never averaged
+into one number:
+
+- **new phrasing** — a wording the model never saw, of a question shape it did
+- **new shape** — whole question types held out of training entirely
+
+Reporting the first alone would be reporting memorisation with extra steps.
+
+### Reproducing
+
+```bash
+make data              # Spider, then the synthetic pairs (verified against the warehouse)
+make train-generator   # Model B: stage 1 then stage 2
+make train-retriever   # Model A
+make evaluate          # the recall table and the accuracy table
+```
+
+Or unattended, in a container that survives the terminal closing:
+
+```bash
+docker compose --profile train up -d trainer
+docker compose logs -f trainer
+```
+
+Every stage checkpoints as it goes and resumes from its own checkpoint, so an
+interruption costs minutes rather than the run. The checkpoints land in
+`ml/checkpoints/`, which the `api` container mounts read-only — retraining is
+a restart, not a rebuild.
 
 ---
 
@@ -404,16 +461,29 @@ make test               # the whole suite, inside the api container
 make test-privileges    # the Postgres assertions, against the live database
 ```
 
-**152 tests.** 137 of them run anywhere, without a database:
+**218 tests.** 183 of them run anywhere, without a database:
 
 | Suite | Covers |
 |---|---|
 | `test_validator.py` | 56 cases — every statement above, plus viewer restrictions, nesting, limits, and that it never raises on hostile input |
 | `test_security.py` | SSRF, prompt-injection fencing, and the write path |
 | `test_isolation.py` | Per-connection routing, the `current_database()` refusal, host pinning, the password-moves-the-host bug, credential sealing, the superuser refusal, the overlay rewrite |
+| `test_pipeline.py` | Intent screening, asking back once, follow-up resolution, chart choice, the incomplete-data warning, and the explanation written without a model |
+| `test_models.py` | The seams around the two models: the input format both training and serving must agree on, ranking and cutoff, the confidence the router routes on, and that a missing checkpoint degrades instead of failing |
 | `test_api.py` | The real app end to end: sign-in, the lockout, cooldowns and caps, invitations (single-use, bound, expiring, racing), tenant isolation, token-kind confusion, layer 1 |
 
-And **fifteen that only Postgres can answer**, run in the container:
+And **35 that only Postgres can answer**, run in the container — the privilege
+assertions below, plus three suites that SQLite cannot host at all (the
+overlay lives in a *schema*, uploads create schemas, and neither exists in
+SQLite):
+
+| Suite | Covers |
+|---|---|
+| `test_corrections.py` | An owner's correction lands in the real table; a member's does not; the same query returns the member's pending value to them and the real one to everyone else; approving writes it; a merge whose row moved is refused as stale |
+| `test_ingestion.py` | Plan creates nothing; load creates, loads and reindexes in one step; commas and dd/mm/yyyy are coerced; another organisation sees neither the table nor its rows |
+| `test_permissions.py` | The two-axis matrix: what a viewer may read, that a viewer and Readout never receive the SQL, that the persona header grants nothing, and that only an owner administers |
+
+### The privilege assertions
 
 | # | Assertion |
 |---|---|
@@ -452,10 +522,16 @@ backend/
 │               merge · visualiser · explainer · llm_client · file_ingest
 ├── db/         engines · tenant_engine · crypto · entities · session
 │               introspect · edits_engine · host_guard
+├── ml/         spider_prep · synth · serialize · warehouse
+│               retriever_train · retriever_eval          ← Model A
+│               generator_train · generator_eval          ← Model B
+│               data/synth/ (committed) · checkpoints/ (not) · results/
 ├── logs/       query_log · edit_log · audit_log
 ├── sql/        00_roles · 10_meta · 20_warehouse · 21_seed · 22_second_tenant
-├── scripts/    bootstrap.sh · seed_demo.py
-├── tests/      test_validator · test_security · test_isolation · test_api · test_privileges
+├── scripts/    bootstrap.sh · seed_demo.py · train_all.sh · demo.py
+├── tests/      test_validator · test_security · test_isolation · test_pipeline
+│               test_models · test_api · test_corrections · test_ingestion
+│               test_permissions · test_privileges
 ├── .dockerignore
 ├── .env.example
 ├── docker-compose.yml

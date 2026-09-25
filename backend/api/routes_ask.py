@@ -204,6 +204,7 @@ def ask(
 
         entry.confidence = routing.confidence
         entry.route = routing.route.value
+        entry.generator = routing.generator
         entry.generated_sql = routing.sql or None
 
         message = _record_message(session, principal, body)

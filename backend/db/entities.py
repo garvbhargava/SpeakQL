@@ -320,6 +320,7 @@ class QueryLog(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     outcome: Mapped[str] = mapped_column(Text, nullable=False)
     route: Mapped[Optional[str]] = mapped_column(Text)
+    generator: Mapped[Optional[str]] = mapped_column(Text)
     generated_sql: Mapped[Optional[str]] = mapped_column(Text)
     confidence: Mapped[Optional[float]] = mapped_column(Numeric(4, 3))
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
