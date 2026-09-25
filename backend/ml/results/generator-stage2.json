@@ -1,0 +1,54 @@
+{
+  "stage": 2,
+  "base_model": "Salesforce/codet5-small",
+  "started_from": "/srv/ml/checkpoints/generator-stage1",
+  "resumed_from": null,
+  "examples": 1290,
+  "epochs": 6.0,
+  "batch": 8,
+  "accumulate": 2,
+  "lr": 5e-05,
+  "steps": 486,
+  "max_input": 384,
+  "max_target": 160,
+  "history": [
+    {
+      "epoch": 1,
+      "step": 81,
+      "dev_loss": 0.09235076134403547,
+      "minutes": 6.1
+    },
+    {
+      "epoch": 2,
+      "step": 162,
+      "dev_loss": 0.03687964969625076,
+      "minutes": 12.1
+    },
+    {
+      "epoch": 3,
+      "step": 243,
+      "dev_loss": 0.026074899391581616,
+      "minutes": 18.0
+    },
+    {
+      "epoch": 4,
+      "step": 324,
+      "dev_loss": 0.019368318344155946,
+      "minutes": 23.9
+    },
+    {
+      "epoch": 5,
+      "step": 405,
+      "dev_loss": 0.014612144689696531,
+      "minutes": 29.8
+    },
+    {
+      "epoch": 6,
+      "step": 486,
+      "dev_loss": 0.014969046662251155,
+      "minutes": 36.1
+    }
+  ],
+  "minutes": 36.1,
+  "checkpoint": "/srv/ml/checkpoints/generator"
+}

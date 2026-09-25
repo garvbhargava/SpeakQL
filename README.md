@@ -185,7 +185,7 @@ presentation; weeks 8–10 are the end-term.
 
 | Branch | State |
 |---|---|
-| `Backend` | 🔨 **Platform complete and verified on Postgres 15** — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 152 tests passing. **Models in progress:** synthetic pairs, Model A (MiniLM) and Model B (CodeT5) |
+| `Backend` | ✅ **Build weeks 1–7 complete, verified on Postgres 15** — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 218 tests, and both models trained in-house on CPU. Measured numbers in [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md#the-two-models) |
 | `Frontend` | ⏳ Next — the interactive mockup, in dark by default |
 | `Full-Stack` | ⏳ After the frontend is approved |
 | `documentation` | ⏳ Added when the project is finished |

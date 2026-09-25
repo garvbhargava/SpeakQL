@@ -125,7 +125,6 @@ CREATE TABLE IF NOT EXISTS schema_registry (
 -- run again over a database created before they existed.
 ALTER TABLE schema_registry ADD COLUMN IF NOT EXISTS references_to TEXT NULL;
 ALTER TABLE schema_registry ADD COLUMN IF NOT EXISTS is_nullable BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE query_log       ADD COLUMN IF NOT EXISTS generator TEXT NULL;
 
 -- -------------------------------------------------------- editable_tables ----
 -- Default: every table with a primary key. A change that cannot be pinned to
@@ -250,6 +249,12 @@ CREATE TABLE IF NOT EXISTS query_log (
     refused_by      TEXT        NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Added after the first version of this file. It has to come AFTER the CREATE
+-- above: ADD COLUMN IF NOT EXISTS tolerates a column that is already there,
+-- not a table that is not, so placing it earlier in the file made a fresh
+-- bootstrap fail on the line.
+ALTER TABLE query_log ADD COLUMN IF NOT EXISTS generator TEXT NULL;
 
 CREATE INDEX IF NOT EXISTS query_log_org_idx ON query_log (org_id, created_at DESC);
 
