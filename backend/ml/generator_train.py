@@ -65,6 +65,37 @@ def _warehouse_columns():
     return columns_for(tables, foreign_keys)
 
 
+def balance(rows: list[dict], target: int, rng: random.Random) -> list[dict]:
+    """Give every question SHAPE the same weight, whatever its slots allow.
+
+    The generator counts combinations, so a template with a customer slot and
+    a period slot produces 178 pairs while "total sales by region" -- which
+    has no slots and is the demo's first question -- produces three. Trained
+    on that, the model learns the shapes it saw two hundred times and fumbles
+    the ones it saw three, which is exactly backwards.
+
+    Repeats are not duplicates: the schema handed to the model is built per
+    example with a different set of distractor tables in a different order,
+    so a repeated pair is a genuinely different input with the same answer.
+    """
+    if not target:
+        return rows
+
+    by_template: dict[str, list[dict]] = {}
+    for row in rows:
+        by_template.setdefault(row.get("template", "?"), []).append(row)
+
+    out: list[dict] = []
+    for group in by_template.values():
+        if len(group) >= target:
+            out.extend(rng.sample(group, target))
+        else:
+            out.extend(group)
+            out.extend(rng.choice(group) for _ in range(target - len(group)))
+    rng.shuffle(out)
+    return out
+
+
 def build_examples(rows: list[dict], stage: int, rng: random.Random) -> list[tuple[str, str]]:
     examples: list[tuple[str, str]] = []
     warehouse = _warehouse_columns() if stage == 2 else None
@@ -89,6 +120,10 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--limit", type=int, default=0,
                         help="use only N training rows -- for a smoke run")
+    parser.add_argument("--balance", type=int, default=0,
+                        help="pairs per question shape (stage 2): evens out "
+                             "templates whose slots produce hundreds against "
+                             "templates that produce three")
     parser.add_argument("--save-every", type=int, default=40,
                         help="write the checkpoint every N optimiser steps")
     parser.add_argument("--resume", action="store_true",
@@ -129,6 +164,11 @@ def main() -> None:
     model.train()
 
     train_rows, dev_rows = _rows_for_stage(args.stage, args.limit or None)
+    if args.balance:
+        before = len(train_rows)
+        train_rows = balance(train_rows, args.balance, rng)
+        print(f"balanced {before} -> {len(train_rows)} rows, "
+              f"{args.balance} per question shape")
     train = build_examples(train_rows, args.stage, rng)
     dev = build_examples(dev_rows, args.stage, rng)
     print(f"stage {args.stage}: {len(train)} training examples, {len(dev)} dev")

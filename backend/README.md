@@ -195,6 +195,30 @@ interruption costs minutes rather than the run. The checkpoints land in
 `ml/checkpoints/`, which the `api` container mounts read-only — retraining is
 a restart, not a rebuild.
 
+### How these are measured
+
+Four decisions about the numbers, made before they were produced:
+
+- **Recall is strict**: *every* gold table inside the top k, not "at least
+  one". The generator is handed the top k and nothing else, so a query
+  needing three tables of which two were retrieved is a query that cannot be
+  written. Counting that as two-thirds right would flatter the number.
+- **Retrieval is also measured as the pipeline uses it** — with join-path
+  completion — because retrieval scores each table against the question on
+  its own and therefore cannot score a table the question never mentions.
+- **Execution accuracy is the number that matters**: the generated statement
+  and the gold statement are both *run* on the seeded warehouse and their rows
+  compared. Exact match is reported beside it and is unfair by construction —
+  there are many correct ways to write the same query and it calls them wrong.
+- **Gemma is sampled, not run over the whole set.** On a CPU it takes tens of
+  seconds a question; the sample size is printed beside the number rather than
+  the number being quoted as more than it is.
+
+The warehouse test set is synthetic and in-domain: it says how well the model
+answers questions of the kind it was trained on, about this warehouse. It says
+nothing about a warehouse it has never seen — that is what the Spider dev
+numbers are for, and they are reported separately.
+
 ---
 
 ## Getting started

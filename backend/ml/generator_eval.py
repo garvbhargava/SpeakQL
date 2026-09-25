@@ -147,6 +147,10 @@ def main() -> None:
                         help="how many questions to also put to Gemma (0 skips)")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--checkpoint", default=str(GENERATOR))
+    parser.add_argument("--label", default="codet5-small (Spider then warehouse)")
+    parser.add_argument("--out", default="generator-accuracy.json",
+                        help="file in ml/results to write -- use a second name "
+                             "to keep a stage-1-only run beside the final one")
     args = parser.parse_args()
 
     from sqlalchemy import create_engine  # noqa: PLC0415
@@ -173,7 +177,7 @@ def main() -> None:
         if codet5.available():
             everything["codet5-small"] = evaluate(
                 rows, lambda q, s: codet5.generate(q, s).sql,
-                "codet5-small (Spider then warehouse)", conn, permitted)
+                args.label, conn, permitted)
         else:
             print(f"no generator checkpoint at {args.checkpoint}; train it first")
 
@@ -208,9 +212,9 @@ def main() -> None:
                   f"exact {scores['exact_pct']:5.1f}%")
 
     if everything:
-        (RESULTS / "generator-accuracy.json").write_text(
+        (RESULTS / args.out).write_text(
             json.dumps(everything, indent=2), encoding="utf-8")
-        print(f"\nwritten to {RESULTS / 'generator-accuracy.json'}")
+        print(f"\nwritten to {RESULTS / args.out}")
 
 
 if __name__ == "__main__":
