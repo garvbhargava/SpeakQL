@@ -177,6 +177,11 @@ async def load_upload(
 
     return {
         "created": f"{schema}.{plan.table_name}",
+        # The interface's next move is to ask a question about what was just
+        # uploaded, and it needs to name the connection to do that. Without
+        # these two the client has to go and look them up.
+        "connection_id": connection.id,
+        "dataset_id": dataset.id,
         "rows": loaded,
         "warnings": plan.warnings,
         "reindexed": result.summary,
