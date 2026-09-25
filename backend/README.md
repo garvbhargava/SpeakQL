@@ -219,6 +219,44 @@ answers questions of the kind it was trained on, about this warehouse. It says
 nothing about a warehouse it has never seen — that is what the Spider dev
 numbers are for, and they are reported separately.
 
+### Model A — measured
+
+Strict recall: **every** gold table inside the top k. `ml/results/retriever-recall.json`.
+
+**Spider dev — 1,034 questions over 20 databases that appear nowhere in training**
+
+| Retriever | recall@1 | recall@3 | recall@5 |
+|---|---:|---:|---:|
+| lexical overlap (baseline) | 49.9% | 93.3% | 98.5% |
+| MiniLM, off the shelf | **54.0%** | 95.7% | 99.4% |
+| MiniLM, fine-tuned | 53.6% | 97.7% | 99.6% |
+| MiniLM, fine-tuned + join paths | 53.6% | **98.1%** | **99.6%** |
+
+**This warehouse — 299 held-out questions**
+
+| Retriever | recall@1 | recall@3 | recall@5 |
+|---|---:|---:|---:|
+| lexical overlap (baseline) | 16.1% | 42.5% | 93.0% |
+| MiniLM, off the shelf | **20.4%** | 38.5% | 80.3% |
+| MiniLM, fine-tuned | 19.1% | **99.7%** | **100.0%** |
+
+Three things in those tables are worth saying out loud:
+
+- **Fine-tuning is what makes retrieval usable here.** Off the shelf, MiniLM
+  covers every needed table for 38.5% of warehouse questions; fine-tuned, for
+  99.7%. The off-the-shelf model ranks tables by how much their *names* sound
+  like the question, and "which region sold the most" does not sound like
+  `orders`.
+- **recall@1 is low everywhere on the warehouse, and that is arithmetic, not
+  failure.** Most of these questions need two or three tables — sales by
+  region is `orders`, `customers` and `regions` — so one table can almost
+  never be all of them. It is reported because leaving it out would be
+  choosing the flattering columns.
+- **The fine-tuned model is marginally worse at recall@1 on Spider** (53.6%
+  against 54.0%) while being clearly better at 3 and 5. Training pushed it
+  towards covering the whole set of tables a query needs rather than ranking
+  one of them first, which is the behaviour the pipeline actually uses.
+
 ---
 
 ## Getting started
