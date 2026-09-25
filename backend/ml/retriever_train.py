@@ -47,11 +47,13 @@ def spider_examples(rng: random.Random, limit: int | None = None) -> list[tuple[
         for gold in row["tables"]:
             if gold not in tables:
                 continue
-            negative = rng.choice(others) if others else None
+            if not others:
+                continue          # no hard negative available in this database
+            negative = rng.choice(others)
             examples.append((
                 row["question"],
                 table_document(gold, tables[gold]),
-                table_document(negative, tables[negative]) if negative else "",
+                table_document(negative, tables[negative]),
             ))
         if limit and len(examples) >= limit:
             break
@@ -67,11 +69,13 @@ def warehouse_examples(rng: random.Random) -> list[tuple[str, str, str]]:
         for gold in row["tables"]:
             if gold not in tables:
                 continue
-            negative = rng.choice(others) if others else None
+            if not others:
+                continue
+            negative = rng.choice(others)
             examples.append((
                 row["question"],
                 table_document(gold, tables[gold]),
-                table_document(negative, tables[negative]) if negative else "",
+                table_document(negative, tables[negative]),
             ))
     return examples
 
@@ -82,39 +86,72 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--spider-limit", type=int, default=0)
+    parser.add_argument("--threads", type=int, default=0)
     args = parser.parse_args()
 
-    from sentence_transformers import (  # noqa: PLC0415
-        InputExample, SentenceTransformer, losses,
-    )
-    from torch.utils.data import DataLoader  # noqa: PLC0415
+    import torch  # noqa: PLC0415
+    from sentence_transformers import SentenceTransformer, losses  # noqa: PLC0415
+    from transformers import get_linear_schedule_with_warmup  # noqa: PLC0415
+
+    if args.threads:
+        torch.set_num_threads(args.threads)
+    torch.manual_seed(SEED)
 
     rng = random.Random(SEED)
     spider = spider_examples(rng, args.spider_limit or None)
     warehouse = warehouse_examples(rng)
+    examples = [triple for triple in spider + warehouse]
+    rng.shuffle(examples)
     print(f"{len(spider)} Spider pairs + {len(warehouse)} warehouse pairs")
 
-    examples = [
-        InputExample(texts=[question, positive, negative] if negative
-                     else [question, positive])
-        for question, positive, negative in spider + warehouse
-    ]
-    rng.shuffle(examples)
-
     model = SentenceTransformer(BASE_MODEL)
-    loader = DataLoader(examples, shuffle=True, batch_size=args.batch,
-                        drop_last=True)
-    loss = losses.MultipleNegativesRankingLoss(model)
+    loss_fn = losses.MultipleNegativesRankingLoss(model)
+
+    # The loop is written out rather than calling SentenceTransformer.fit():
+    # fit() pulls in `datasets` and `accelerate` for a training set that is a
+    # list of triples in memory, and a hundred megabytes of dependency in the
+    # serving image is a real cost for no benefit here.
+    batches = [examples[i:i + args.batch]
+               for i in range(0, len(examples), args.batch)]
+    batches = [b for b in batches if len(b) > 1]   # in-batch negatives need >1
+    total_steps = len(batches) * args.epochs
+
+    optimiser = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    schedule = get_linear_schedule_with_warmup(
+        optimiser, num_warmup_steps=int(0.06 * total_steps),
+        num_training_steps=total_steps)
+    print(f"{total_steps} steps of batch {args.batch}")
 
     started = time.monotonic()
-    model.fit(
-        train_objectives=[(loader, loss)],
-        epochs=args.epochs,
-        warmup_steps=int(0.06 * len(loader) * args.epochs),
-        optimizer_params={"lr": args.lr},
-        show_progress_bar=True,
-        output_path=str(RETRIEVER),
-    )
+    step = 0
+    model.train()
+    for epoch in range(args.epochs):
+        rng.shuffle(batches)
+        running = 0.0
+        for batch in batches:
+            # Anchor, positive, and one hard negative -- a table from the same
+            # database that this query does not use. The easy negatives, from
+            # other databases entirely, come free as in-batch negatives and
+            # teach almost nothing on their own.
+            columns = list(zip(*batch))
+            features = [model.tokenize(list(column)) for column in columns]
+            value = loss_fn(features, torch.zeros(len(batch)))
+
+            value.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimiser.step()
+            schedule.step()
+            optimiser.zero_grad()
+
+            running += float(value)
+            step += 1
+            if step % 25 == 0:
+                rate = step / (time.monotonic() - started)
+                print(f"  step {step}/{total_steps} loss {running / 25:.4f} "
+                      f"{rate * 60:.1f} steps/min "
+                      f"eta {(total_steps - step) / rate / 60:.0f} min", flush=True)
+                running = 0.0
+
     minutes = round((time.monotonic() - started) / 60, 1)
     model.save(str(RETRIEVER))
 
