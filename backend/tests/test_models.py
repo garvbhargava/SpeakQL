@@ -271,6 +271,16 @@ def test_without_a_checkpoint_the_fallback_answers():
     assert result.ok
 
 
+def test_no_generator_at_all_is_not_reported_as_a_refusal():
+    """Nothing was refused -- there was nothing to refuse. Reporting this as
+    "Layer 2 refused it" points at the validator, which never ran."""
+    result = route("q", "schema", PERMITTED, primary=_Refuses(), fallback=None,
+                   threshold=0.55)
+    assert result.route is Route.UNAVAILABLE
+    assert not result.ok
+    assert "no generator" in result.note
+
+
 def test_low_confidence_escalates_and_the_fallback_is_validated_too():
     result = route("q", "schema", PERMITTED,
                    primary=_Writes("SELECT region_name FROM public.regions", 0.2,

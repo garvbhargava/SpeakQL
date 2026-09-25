@@ -208,6 +208,19 @@ def ask(
 
         message = _record_message(session, principal, body)
 
+        if routing.route is Route.UNAVAILABLE:
+            # Nothing was refused: there was nothing to refuse. Saying "the
+            # validator refused this" here would be a lie about which part
+            # of the system stopped.
+            entry.outcome = Outcome.FAILED
+            entry.refused_by = "no generator"
+            return schemas.FailureOut(
+                reason=("No generator answered. Model B has no checkpoint and "
+                        "Gemma is not reachable -- start it with "
+                        "`make up-local && make pull-model`."),
+                retryable=True,
+            )
+
         if routing.route is Route.CANNOT_ANSWER:
             entry.outcome = Outcome.REFUSED
             return schemas.RefusalOut(
