@@ -187,7 +187,12 @@ def health(request: Request) -> JSONResponse:
     """
     engines: Engines | None = getattr(request.app.state, "engines", None)
     databases = engines.check() if engines else {"meta": "not started"}
-    llm_up = getattr(request.app.state, "llm", None) is not None
+
+    # Asked NOW, not remembered from startup: the first version reported the
+    # decision made when the process booted, so a model that had gone away an
+    # hour ago was still described as reachable.
+    client = getattr(request.app.state, "llm", None)
+    llm_up = bool(client and client.health())
 
     healthy = all(v == "ok" for v in databases.values())
     body = {
@@ -199,6 +204,12 @@ def health(request: Request) -> JSONResponse:
             "mode": settings.llm_mode,
             "model": settings.llm_model,
             "reachable": "yes" if llm_up else "no",
+        },
+        "models": {
+            "generator": (getattr(request.app.state, "generator", None)
+                          and "codet5-small") or "none (Gemma writes every query)",
+            "retriever": (getattr(request.app.state, "retriever", None)
+                          and "minilm") or "lexical",
         },
     }
     return JSONResponse(body, status_code=200 if healthy else 503)
