@@ -103,6 +103,128 @@ class Template:
     allow_empty: bool = False  # an empty result is the right answer here
 
 
+# More ways to ask the shapes that have NO slots.
+#
+# The generator counts combinations, so a template with a customer slot and a
+# period slot turns four phrasings into 178 pairs, while "total sales by
+# region" -- the demo's first question, and a three-table join -- turns four
+# phrasings into four pairs. The first model trained on that answered the
+# common shapes and dropped the JOIN clauses from the rare ones.
+#
+# Repetition would have evened out the counts; this evens them out with real
+# wording, which is what the held-out-phrasing half of the test set measures.
+EXTRA_PHRASINGS: dict[str, tuple[str, ...]] = {
+    "sales_by_region": (
+        "How much did each region sell?",
+        "Give me the sales total for every region",
+        "Sales figures by region please",
+        "What did each region bring in?",
+    ),
+    "top_region": (
+        "Which region is our biggest seller?",
+        "Top region by total order amount",
+        "Where did we sell the most?",
+        "Name the region with the largest sales total",
+    ),
+    "worst_region": (
+        "Which region brings in the least?",
+        "Our smallest region by sales",
+        "Where did we sell the least?",
+        "Name the region with the smallest sales total",
+    ),
+    "average_order_by_region": (
+        "What does a typical order look like in each region?",
+        "Average sale size per region",
+        "Mean order value for every region",
+        "How big is the average order in each region?",
+    ),
+    "customer_count_by_region": (
+        "How many customers does each region have?",
+        "Count of customers per region",
+        "Customers per region",
+        "Break the customer count down by region",
+    ),
+    "best_month": (
+        "What was our strongest month?",
+        "Which month brought in the most money?",
+        "Our best month by revenue",
+        "Which month topped the sales chart?",
+    ),
+    "worst_month": (
+        "What was our weakest month?",
+        "Which month brought in the least?",
+        "Our worst month by revenue",
+        "Which month was at the bottom for sales?",
+    ),
+    "sales_by_month": (
+        "How did sales go month by month?",
+        "Give me the monthly totals",
+        "Sales per month",
+        "What did each month bring in?",
+    ),
+    "average_order": (
+        "How big is a typical order?",
+        "What does the average sale come to?",
+        "Mean value of an order",
+        "Give me the average order size",
+    ),
+    "latest_order": (
+        "What is the date of our most recent order?",
+        "When did the last order come in?",
+        "Date of the latest sale",
+        "How recent is the newest order?",
+    ),
+    "customer_with_most_orders": (
+        "Who buys from us most often?",
+        "Which customer orders the most frequently?",
+        "Name the customer with the most orders",
+        "Our most regular customer?",
+    ),
+    "orders_per_customer": (
+        "How often has each customer ordered?",
+        "Order counts by customer",
+        "Number of orders for every customer",
+        "Break the order count down by customer",
+    ),
+    "shipments_missing_units": (
+        "How many shipments are missing a unit count?",
+        "Count the shipments with no units",
+        "How many shipments never had their units filled in?",
+        "Number of shipments with units missing",
+    ),
+    "which_shipments_missing_units": (
+        "Show me the shipments with no unit count",
+        "Which shipments still need their units filled in?",
+        "List shipments where units were never recorded",
+        "Find the shipments missing a unit count",
+    ),
+    "shipments_by_carrier": (
+        "How many shipments has each carrier handled?",
+        "Shipments per carrier",
+        "Count the shipments for every carrier",
+        "Break the shipment count down by carrier",
+    ),
+    "units_by_carrier": (
+        "Which carrier moved the most units?",
+        "Who carried the most units?",
+        "Name the carrier with the highest unit total",
+        "Top carrier by units",
+    ),
+    "product_revenue": (
+        "Which product makes us the most money?",
+        "Our best selling product by revenue",
+        "Name the highest earning product",
+        "Which product tops the revenue list?",
+    ),
+    "revenue_by_product": (
+        "How much revenue did each product bring in?",
+        "Revenue per product",
+        "Give me product-by-product revenue",
+        "What did each product earn?",
+    ),
+}
+
+
 T = Template
 
 TEMPLATES: list[Template] = [
@@ -606,12 +728,13 @@ def build() -> list[Pair]:
     pairs: dict[tuple[str, str], Pair] = {}
 
     for template in TEMPLATES:
+        questions = template.questions + EXTRA_PHRASINGS.get(template.name, ())
         for values in _combinations(template, rng):
-            for index, question_template in enumerate(template.questions):
+            for index, question_template in enumerate(questions):
                 question = _fill(question_template, values)
                 sql = canonical(_fill(template.sql, values))
 
-                last = index == len(template.questions) - 1
+                last = index == len(questions) - 1
                 if template.holdout:
                     split, kind = "test", "new shape"
                 elif last:
