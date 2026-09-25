@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS schema_registry (
 -- run again over a database created before they existed.
 ALTER TABLE schema_registry ADD COLUMN IF NOT EXISTS references_to TEXT NULL;
 ALTER TABLE schema_registry ADD COLUMN IF NOT EXISTS is_nullable BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE query_log       ADD COLUMN IF NOT EXISTS generator TEXT NULL;
 
 -- -------------------------------------------------------- editable_tables ----
 -- Default: every table with a primary key. A change that cannot be pinned to
@@ -238,6 +239,10 @@ CREATE TABLE IF NOT EXISTS query_log (
     outcome         TEXT        NOT NULL CHECK (outcome IN
                         ('answered', 'clarified', 'blocked', 'refused', 'failed', 'rate_limited')),
     route           TEXT        NULL,
+    -- Which model wrote the statement. With two generators, "confidence 0.61"
+    -- means different things depending on which produced it, and the week-9
+    -- threshold sweep has to tell them apart.
+    generator       TEXT        NULL,
     generated_sql   TEXT        NULL,
     confidence      NUMERIC(4, 3) NULL,
     latency_ms      INTEGER     NULL,

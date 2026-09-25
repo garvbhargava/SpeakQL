@@ -46,6 +46,10 @@ class Entry:
     outcome: Outcome
     connection_id: int | None = None
     route: str | None = None
+    # Which model wrote the statement. With two generators, "confidence 0.61"
+    # means different things depending on which one produced it, and the
+    # week-9 threshold sweep has to be able to tell them apart.
+    generator: str | None = None
     generated_sql: str | None = None
     confidence: float | None = None
     latency_ms: int | None = None
@@ -61,6 +65,7 @@ def write(session: Session, entry: Entry) -> QueryLog:
         question=entry.question[:4000],
         outcome=entry.outcome.value,
         route=entry.route,
+        generator=entry.generator,
         generated_sql=entry.generated_sql,
         confidence=entry.confidence,
         latency_ms=entry.latency_ms,
