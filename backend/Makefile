@@ -3,7 +3,10 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: help up up-local down logs bootstrap pull-model test test-privileges fmt clean
+.PHONY: help up up-local down logs bootstrap pull-model test test-privileges \
+        data train-retriever train-generator evaluate models fmt clean
+
+PY := python
 
 help:  ## show this
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -30,6 +33,28 @@ bootstrap:  ## create databases, roles, warehouses and the demo seed
 
 pull-model:  ## fetch Gemma into the llm container (~3 GB, once)
 	$(COMPOSE) exec -T llm ollama pull $${LLM_MODEL:-gemma3:4b}
+
+# --- the two models -----------------------------------------------------------
+# These run on the HOST, not in a container: training wants every core, and the
+# api container has no business holding a training loop. The checkpoints they
+# write are mounted into that container read-only.
+
+data:  ## Spider, and the synthetic pairs (the stack must be bootstrapped)
+	$(PY) -m ml.spider_prep
+	$(PY) -m ml.synth
+
+train-retriever:  ## Model A -- MiniLM schema retrieval (CPU)
+	$(PY) -m ml.retriever_train --epochs 1
+
+train-generator:  ## Model B -- CodeT5: Spider, then this warehouse (hours, CPU)
+	$(PY) -m ml.generator_train --stage 1 --epochs 1
+	$(PY) -m ml.generator_train --stage 2 --epochs 6
+
+evaluate:  ## the recall table and the accuracy table
+	$(PY) -m ml.retriever_eval
+	$(PY) -m ml.generator_eval
+
+models: data train-retriever train-generator evaluate  ## all of it, in order
 
 test:  ## the whole suite
 	$(COMPOSE) exec -T api pytest
