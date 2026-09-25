@@ -15,6 +15,22 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# The model runtime, in its own layer: it is most of the image and changes far
+# less often than the code. Build with --build-arg WITH_MODELS=0 for a lean
+# image that answers through Gemma and lexical retrieval instead.
+ARG WITH_MODELS=1
+COPY requirements-ml.txt .
+RUN if [ "$WITH_MODELS" = "1" ]; then \
+      pip install --no-cache-dir -r requirements-ml.txt; \
+    else echo "skipping the model runtime"; fi
+
+# Transformers must not reach for the hub at request time: the checkpoints are
+# mounted, and a network call on the read path is a timeout waiting to happen.
+# USE_TF because transformers imports TensorFlow if it can find one.
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    USE_TF=0
+
 COPY . .
 
 # Not root. The API has no reason to be.

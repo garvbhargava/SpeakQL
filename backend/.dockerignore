@@ -5,6 +5,13 @@
 .env.*
 !.env.example
 
+# Training data and checkpoints are hundreds of megabytes and are NOT baked in:
+# compose mounts ml/checkpoints read-only, so retraining does not mean
+# rebuilding the image.
+ml/data/
+ml/checkpoints/
+ml/results/*.log
+
 .venv/
 __pycache__/
 *.pyc

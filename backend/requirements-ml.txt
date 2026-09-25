@@ -1,0 +1,15 @@
+# The two trained models, at serving time (Backend Plan §11).
+#
+# Separate from requirements.txt because it is ~1 GB and the API runs without
+# it: no torch means no Model A and no Model B, and the pipeline falls back to
+# lexical retrieval and Gemma -- which is the comparative study's off-the-shelf
+# baseline, not a broken state. Dockerfile installs both.
+#
+# CPU wheels, explicitly. The default PyPI torch for Linux pulls the whole CUDA
+# stack (several GB) for a machine with no GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.5.1+cpu
+transformers==4.47.1
+sentence-transformers==3.3.1
+faiss-cpu==1.9.0.post1

@@ -67,6 +67,11 @@ services:
       SPEAKQL_OWNER_DSN: ""
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      # The trained checkpoints, mounted rather than built in: retraining is
+      # then a restart, not an image rebuild. Read-only -- the API loads
+      # models and never writes one.
+      - ./ml/checkpoints:/srv/ml/checkpoints:ro
     depends_on:
       db:
         condition: service_healthy
