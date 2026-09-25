@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 log = logging.getLogger("speakql.retriever")
@@ -151,40 +152,147 @@ class LexicalRetriever(Retriever):
 
 # ------------------------------------------------------------- embedding ----
 
-class EmbeddingRetriever(Retriever):
-    """MiniLM bi-encoder + FAISS. Build phase 3.
+def table_document(table: str, columns: Iterable[str],
+                   description: str | None = None) -> str:
+    """What a table looks like to Model A.
 
-    A bi-encoder embeds the question and every column separately, so columns
-    are embedded once in advance and a query is a vector search rather than a
-    model call per column. Metric: recall@10 of the gold tables.
+    **This is a contract with ml/**: the index is built from this text and the
+    model was trained on it. Change it and both have to be rebuilt, or
+    retrieval quietly gets worse with nothing to show why.
+    """
+    text = f"table {table} with columns {', '.join(columns)}"
+    if description:
+        text += f". {description}"
+    return text
+
+
+class EmbeddingRetriever(Retriever):
+    """MiniLM bi-encoder + FAISS (Model A).
+
+    A bi-encoder embeds the question and each table separately, so tables are
+    embedded once and a question is one embedding plus a vector search -- not
+    a model call per table. The index is per schema and cached: the same
+    connection asks the same six tables a thousand times.
+
+    Falls back to nothing: if the checkpoint or the libraries are missing it
+    raises NotImplementedError, and the pipeline uses LexicalRetriever, which
+    is the study's off-the-shelf baseline rather than a placeholder.
     """
 
     name = "minilm-faiss"
 
-    def __init__(self, index_path: str | None = None,
+    # Everything more than this far below the best match is not sent to the
+    # generator. On a six-table warehouse nothing is pruned; on a registered
+    # database with two hundred tables, almost everything is.
+    MARGIN = 0.22
+
+    def __init__(self, checkpoint: str | None = None,
                  model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
-        self.index_path = index_path
+        self.checkpoint = checkpoint
         self.model_name = model_name
         self._model = None
-        self._index = None
+        self._cache: dict[tuple, tuple[list[str], object]] = {}
 
-    def _load(self) -> None:
+    def available(self) -> bool:
+        try:
+            self._load()
+            return True
+        except NotImplementedError:
+            return False
+
+    def _load(self):
         if self._model is not None:
-            return
+            return self._model
         try:
             from sentence_transformers import SentenceTransformer  # noqa: PLC0415
         except ImportError as exc:
             raise NotImplementedError(
-                "EmbeddingRetriever needs sentence-transformers and faiss-cpu, "
-                "which arrive in build phase 3. Until then the pipeline uses "
-                "LexicalRetriever, which is the study's off-the-shelf baseline."
+                "EmbeddingRetriever needs sentence-transformers and faiss-cpu. "
+                "Until they are installed the pipeline uses LexicalRetriever, "
+                "which is the study's off-the-shelf baseline."
             ) from exc
-        self._model = SentenceTransformer(self.model_name)
+
+        source = self.checkpoint or self.model_name
+        try:
+            self._model = SentenceTransformer(source)
+        except Exception as exc:  # noqa: BLE001 - a missing checkpoint is normal
+            raise NotImplementedError(
+                f"no retriever checkpoint at {source}: {exc}"
+            ) from exc
+        log.info("retriever loaded from %s", source)
+        return self._model
+
+    def _index_for(self, by_table: dict[str, list[Column]]):
+        """Embed each table once, and keep it. Keyed by the schema itself, so
+        a reindex that changes a column invalidates the entry."""
+        key = tuple(sorted(
+            (table, tuple(c.column_name for c in columns))
+            for table, columns in by_table.items()
+        ))
+        if key in self._cache:
+            return self._cache[key]
+
+        model = self._load()
+        names = sorted(by_table)
+        documents = [
+            table_document(
+                name.split(".")[-1],
+                [c.column_name for c in by_table[name]],
+                next((c.description for c in by_table[name] if c.description), None),
+            )
+            for name in names
+        ]
+        matrix = model.encode(documents, normalize_embeddings=True,
+                              show_progress_bar=False)
+
+        index = None
+        try:
+            import faiss  # noqa: PLC0415
+            index = faiss.IndexFlatIP(matrix.shape[1])
+            index.add(matrix)
+        except ImportError:
+            # Cosine against a few hundred rows is a matrix multiply; FAISS is
+            # what keeps it flat when a registered database has thousands.
+            log.info("faiss not installed; scoring with numpy instead")
+
+        self._cache[key] = (names, index if index is not None else matrix)
+        return self._cache[key]
 
     def search(self, question: str, columns: list[Column],
                k: int = DEFAULT_K) -> list[Scored]:
-        self._load()
-        raise NotImplementedError("FAISS index is built in phase 3")
+        model = self._load()
+
+        by_table: dict[str, list[Column]] = {}
+        for column in columns:
+            by_table.setdefault(column.qualified_table, []).append(column)
+        if not by_table:
+            return []
+
+        names, index = self._index_for(by_table)
+        query = model.encode([question], normalize_embeddings=True,
+                             show_progress_bar=False)
+
+        if hasattr(index, "search"):                    # faiss
+            similarity, positions = index.search(query, min(k, len(names)))
+            ranked = [(names[p], float(s))
+                      for s, p in zip(similarity[0], positions[0]) if p >= 0]
+        else:                                           # numpy fallback
+            scores = (index @ query[0])
+            order = scores.argsort()[::-1][:k]
+            ranked = [(names[p], float(scores[p])) for p in order]
+
+        if not ranked:
+            return []
+
+        best = ranked[0][1]
+        out: list[Scored] = []
+        for table, similarity in ranked:
+            # Cosine is -1..1; the interface and the cutoff are 0..1.
+            score = round(max(0.0, (similarity + 1) / 2), 3)
+            if similarity < best - self.MARGIN:
+                score = 0.0                              # below CUTOFF: not sent
+            out.append(Scored(table, score, by_table[table]))
+        return out
 
 
 # ---------------------------------------------------------- join paths ----
@@ -345,6 +453,31 @@ def to_compact_schema(scored: list[Scored], *, public_only: bool = False) -> str
         name = item.table.split(".")[-1] if item.table.startswith("public.") else item.table
         parts.append(f"{name} : {' , '.join(rendered)}")
     return " | ".join(parts)
+
+
+@dataclass(frozen=True)
+class SchemaContext:
+    """The retrieved schema, in both forms a generator might want.
+
+    Built once per question. Gemma reads DDL; CodeT5 was trained on the
+    compact line. Giving each the form it was built for is worth more than
+    picking one and making the other cope.
+    """
+
+    ddl: str
+    compact: str
+    tables: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.ddl)
+
+
+def context_for(scored: list[Scored], *, public_only: bool = False) -> SchemaContext:
+    return SchemaContext(
+        ddl=to_schema_text(scored, public_only=public_only),
+        compact=to_compact_schema(scored, public_only=public_only),
+        tables=tuple(s.table for s in scored if s.above_cutoff),
+    )
 
 
 def permitted_from(scored: list[Scored]) -> frozenset[str]:

@@ -40,7 +40,27 @@ class Generator(ABC):
     name: str = "abstract"
 
     @abstractmethod
-    def generate(self, question: str, schema_text: str) -> Candidate: ...
+    def generate(self, question: str, schema) -> Candidate: ...
+
+
+def _ddl(schema) -> str:
+    """Accept a SchemaContext or a plain string, and take the DDL form."""
+    return getattr(schema, "ddl", schema) or ""
+
+
+def _compact(schema) -> str:
+    """The same, for the form CodeT5 was trained on."""
+    return getattr(schema, "compact", schema) or ""
+
+
+def model_input(question: str, schema_compact: str) -> str:
+    """The exact string CodeT5 is fed, at training time and at request time.
+
+    **A contract with ml/**: ml/serialize.py imports this. Serialising one way
+    in training and another way here would cost accuracy with nothing in any
+    log to explain it.
+    """
+    return f"question: {question.strip()} | schema: {schema_compact}"
 
 
 # ------------------------------------------------------------------ Gemma ----
@@ -82,7 +102,8 @@ class GemmaGenerator(Generator):
         self.client = client
         self.name = client.model
 
-    def generate(self, question: str, schema_text: str) -> Candidate:
+    def generate(self, question: str, schema) -> Candidate:
+        schema_text = _ddl(schema)
         prompt = build_prompt(
             _SQL_INSTRUCTION + f"\nQuestion: {question.strip()}",
             schema=schema_text,
@@ -110,22 +131,120 @@ class GemmaGenerator(Generator):
 # ----------------------------------------------------------------- CodeT5 ----
 
 class CodeT5Generator(Generator):
-    """The fine-tuned in-house generator. Build phase 5.
+    """The fine-tuned in-house generator (Model B).
 
-    Left unimplemented deliberately rather than stubbed with a fake number:
-    a generator that silently returned a plausible confidence would corrupt
-    the router and the ablation table at once.
+    60M parameters, trained in two stages by ml/generator_train.py: Spider
+    first, this warehouse second. It answers in well under a second on CPU,
+    which is what makes it the primary rather than a curiosity -- Gemma takes
+    tens of seconds on the same machine.
+
+    Its confidence is a **real decoding score**: the length-normalised
+    log-probability of the beam that was returned, exponentiated, so it is the
+    per-token geometric mean probability. That is the number the router routes
+    on and the number the week-9 threshold sweep will calibrate. Gemma has no
+    such score and gets a structural estimate instead -- the two are not the
+    same measurement and the answer says which one it is.
+
+    If the checkpoint is missing it raises NotImplementedError, and the router
+    falls through to Gemma rather than the request failing.
     """
 
     name = "codet5-small"
+    NUM_BEAMS = 4
+    MAX_NEW_TOKENS = 160
+    MAX_INPUT = 384
 
     def __init__(self, checkpoint_path: str | None = None) -> None:
         self.checkpoint_path = checkpoint_path
+        self._model = None
+        self._tokenizer = None
 
-    def generate(self, question: str, schema_text: str) -> Candidate:
-        raise NotImplementedError(
-            "CodeT5 is trained in build phase 5. Until then the router has one "
-            "arm and Gemma generates every query -- see README, Roadmap."
+    # -- loading -----------------------------------------------------------
+
+    def available(self) -> bool:
+        try:
+            self._load()
+            return True
+        except NotImplementedError:
+            return False
+
+    def _load(self):
+        if self._model is not None:
+            return self._model, self._tokenizer
+        if not self.checkpoint_path:
+            raise NotImplementedError("no CodeT5 checkpoint configured")
+        try:
+            import torch  # noqa: PLC0415, F401
+            from transformers import (  # noqa: PLC0415
+                AutoTokenizer, T5ForConditionalGeneration,
+            )
+        except ImportError as exc:
+            raise NotImplementedError(
+                "CodeT5 needs torch and transformers; the pipeline falls back "
+                "to Gemma without them"
+            ) from exc
+
+        try:
+            self._tokenizer = AutoTokenizer.from_pretrained(self.checkpoint_path)
+            self._model = T5ForConditionalGeneration.from_pretrained(
+                self.checkpoint_path)
+            self._model.eval()
+        except Exception as exc:  # noqa: BLE001 - an absent checkpoint is normal
+            raise NotImplementedError(
+                f"no usable CodeT5 checkpoint at {self.checkpoint_path}: {exc}"
+            ) from exc
+        log.info("CodeT5 loaded from %s", self.checkpoint_path)
+        return self._model, self._tokenizer
+
+    def warm(self) -> bool:
+        """Load and run once, so the first question is not the slow one."""
+        try:
+            self.generate("warm up", "orders : order_id , amount")
+            return True
+        except NotImplementedError:
+            return False
+        except Exception:  # noqa: BLE001 - warming never breaks a startup
+            return True
+
+    # -- generation --------------------------------------------------------
+
+    def generate(self, question: str, schema) -> Candidate:
+        import time  # noqa: PLC0415
+
+        import torch  # noqa: PLC0415
+
+        model, tokenizer = self._load()
+        text = model_input(question, _compact(schema))
+
+        started = time.monotonic()
+        inputs = tokenizer([text], max_length=self.MAX_INPUT, truncation=True,
+                           return_tensors="pt")
+        with torch.no_grad():
+            output = model.generate(
+                **inputs,
+                max_new_tokens=self.MAX_NEW_TOKENS,
+                num_beams=self.NUM_BEAMS,
+                early_stopping=True,
+                length_penalty=1.0,          # sequences_scores stays comparable
+                output_scores=True,
+                return_dict_in_generate=True,
+            )
+        elapsed = int((time.monotonic() - started) * 1000)
+
+        sql = tokenizer.decode(output.sequences[0], skip_special_tokens=True).strip()
+
+        # sequences_scores is sum(log p) / length^length_penalty. With the
+        # penalty at 1.0, exp() of it is the per-token geometric mean
+        # probability -- comparable across statements of different lengths,
+        # which is the whole point of normalising.
+        score = getattr(output, "sequences_scores", None)
+        confidence = float(torch.exp(score[0])) if score is not None else 0.5
+
+        return Candidate(
+            sql=_strip_to_sql(sql),
+            confidence=round(min(1.0, max(0.0, confidence)), 3),
+            generator=self.name,
+            elapsed_ms=elapsed,
         )
 
 

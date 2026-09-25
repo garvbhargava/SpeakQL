@@ -43,6 +43,21 @@ def get_mailer(request: Request):
     return request.app.state.mailer
 
 
+def get_generator(request: Request):
+    """Model B, or None when no checkpoint is loaded.
+
+    None is a legitimate state: the router then has one arm and Gemma writes
+    every query, which is the study's off-the-shelf baseline rather than a
+    fault.
+    """
+    return getattr(request.app.state, "generator", None)
+
+
+def get_retriever(request: Request):
+    """Model A, or None -- in which case retrieval is lexical."""
+    return getattr(request.app.state, "retriever", None)
+
+
 def get_llm(request: Request):
     """The LLM client, or None when it is unreachable.
 
@@ -73,6 +88,8 @@ SessionDep = Annotated[Session, Depends(get_session)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
 MailerDep = Annotated[object, Depends(get_mailer)]
 LLMDep = Annotated[object, Depends(get_llm)]
+GeneratorDep = Annotated[object, Depends(get_generator)]
+RetrieverDep = Annotated[object, Depends(get_retriever)]
 
 
 # -------------------------------------------------------------- identity ----

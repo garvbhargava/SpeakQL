@@ -75,6 +75,11 @@ class Settings:
     llm_model: str
     llm_endpoint: str
     confidence_threshold: float
+    # The two trained checkpoints. Both are optional: without them the
+    # pipeline uses lexical retrieval and Gemma, which is the study's
+    # off-the-shelf baseline rather than a broken state.
+    generator_checkpoint: str
+    retriever_checkpoint: str
 
     # --- policy -------------------------------------------------------------
     free_email_mode: str   # personal_workspace | invite_only | blocked
@@ -169,6 +174,10 @@ def load() -> Settings:
         llm_model=_optional("LLM_MODEL", "gemma3:4b"),
         llm_endpoint=_optional("LLM_ENDPOINT", "http://llm:11434"),
         confidence_threshold=threshold,
+        generator_checkpoint=_optional("GENERATOR_CHECKPOINT",
+                                       "ml/checkpoints/generator"),
+        retriever_checkpoint=_optional("RETRIEVER_CHECKPOINT",
+                                       "ml/checkpoints/retriever"),
         free_email_mode=free_email_mode,
         statement_timeout_ms=_int("STATEMENT_TIMEOUT_MS", 10_000),
         max_rows=_int("MAX_ROWS", 5_000),

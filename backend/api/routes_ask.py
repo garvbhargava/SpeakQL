@@ -30,7 +30,8 @@ from sqlalchemy import select
 
 from api import schemas
 from app.deps import (
-    EnginesDep, LLMDep, LimiterDep, PrincipalDep, SessionDep, SettingsDep,
+    EnginesDep, GeneratorDep, LLMDep, LimiterDep, PrincipalDep, RetrieverDep,
+    SessionDep, SettingsDep,
 )
 from app.ratelimit import Limited
 from app.rbac import Action, may_see_sql, permitted_tables, require, resolve_connection
@@ -40,7 +41,7 @@ from core.explainer import explain
 from core.llm_client import LLMClient
 from core.router import Route, route
 from core.schema_retriever import (
-    Column, LexicalRetriever, complete_join_paths, to_schema_text,
+    Column, LexicalRetriever, complete_join_paths, context_for,
 )
 from core.sql_generator import GemmaGenerator
 from core.validator import Permitted
@@ -75,6 +76,8 @@ def ask(
     engines: EnginesDep,
     limiter: LimiterDep,
     llm: LLMDep,
+    generator: GeneratorDep,
+    retriever: RetrieverDep,
 ) -> Any:
     """One question in, one of five outcomes out."""
 
@@ -140,12 +143,12 @@ def ask(
                 what_would_help="run schema introspection on it first",
             )
 
-        retrieved = LexicalRetriever().search(question, columns)
+        retrieved = _retrieve(retriever, question, columns)
         # The tables a join has to pass through are added here rather than
         # left to the generator to invent -- see complete_join_paths.
         retrieved = complete_join_paths(retrieved, columns)
-        schema_text = to_schema_text(retrieved, public_only=granted.is_viewer)
-        if not schema_text:
+        schema = context_for(retrieved, public_only=granted.is_viewer)
+        if not schema:
             entry.outcome = Outcome.REFUSED
             message = _record_message(session, principal, body)
             return schemas.RefusalOut(
@@ -175,20 +178,27 @@ def ask(
         tables, public_columns, public_only = permitted_tables(session, granted)
         permitted = Permitted(tables, public_columns, public_only)
 
-        generator = GemmaGenerator(llm) if isinstance(llm, LLMClient) else None
-        if generator is None:
+        # Model B first when it is loaded, Gemma behind it. Below the
+        # confidence threshold -- or refused by the validator -- the router
+        # escalates exactly once, and validates the second answer with the
+        # same validator. Without a checkpoint, Gemma is the only arm.
+        gemma = GemmaGenerator(llm) if isinstance(llm, LLMClient) else None
+        primary = generator or gemma
+        fallback = gemma if generator is not None else None
+
+        if primary is None:
             entry.outcome = Outcome.FAILED
             return schemas.FailureOut(
                 reason=(
-                    "The generator is not reachable. Start it with "
-                    "`make up-local && make pull-model`."
+                    "No generator is available. Train Model B, or start Gemma "
+                    "with `make up-local && make pull-model`."
                 ),
                 retryable=True,
             )
 
         routing = route(
-            question, schema_text, permitted,
-            primary=generator, fallback=None,
+            question, schema, permitted,
+            primary=primary, fallback=fallback,
             threshold=settings.confidence_threshold,
         )
 
@@ -294,6 +304,20 @@ def ask(
 
 
 # ------------------------------------------------------------- internals ----
+
+def _retrieve(retriever, question: str, columns: list[Column]):
+    """Model A when it is loaded, lexical otherwise -- and lexical again if
+    the model fails at request time. Retrieval going wrong must degrade the
+    answer, never lose the request."""
+    if retriever is not None:
+        try:
+            return retriever.search(question, columns)
+        except NotImplementedError:
+            pass
+        except Exception as exc:  # noqa: BLE001 - a dead model is not a 500
+            log.warning("retriever failed, falling back to lexical: %s", exc)
+    return LexicalRetriever().search(question, columns)
+
 
 def _member_overlays(session, principal, connection) -> dict[str, OverlaySpec]:
     """The caller's own pending corrections on this connection, per table.

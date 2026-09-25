@@ -1,0 +1,18 @@
+# Backend-local ignores. The repository root has the rest.
+
+# Downloaded, not ours to redistribute, and reproducible:
+#   python -m ml.spider_prep
+ml/data/spider/
+
+# Trained weights: hundreds of megabytes, rebuilt by ml/*_train.py and mounted
+# into the api container at runtime rather than committed.
+ml/checkpoints/
+
+# Training logs. The measured RESULTS (ml/results/*.json) are committed --
+# they are the numbers the report quotes.
+ml/results/*.log
+ml/results/*.err
+
+# The synthetic pairs in ml/data/synth/ ARE committed: they are a deliverable,
+# every one of them was verified by running it, and the evaluation split has
+# to be the same split next week as it was today.

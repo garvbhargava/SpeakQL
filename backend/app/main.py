@@ -29,6 +29,8 @@ from app.ratelimit import RateLimiter
 from auth import otp
 from auth import routes as auth_routes
 from core.llm_client import LLMClient
+from core.schema_retriever import EmbeddingRetriever
+from core.sql_generator import CodeT5Generator
 from db.engines import Engines
 from db.session import SessionFactory
 
@@ -59,6 +61,22 @@ async def lifespan(application: FastAPI):
         codes_per_address_hour=settings.rate_codes_per_address_hour,
         codes_per_ip_hour=settings.rate_codes_per_ip_hour,
     )
+
+    # Model B, and Model A's index. Both optional: an untrained checkout
+    # answers questions through Gemma and lexical retrieval, which is exactly
+    # the off-the-shelf baseline the comparative study measures against.
+    generator = CodeT5Generator(settings.generator_checkpoint)
+    application.state.generator = generator if generator.available() else None
+    retriever = EmbeddingRetriever(settings.retriever_checkpoint)
+    application.state.retriever = retriever if retriever.available() else None
+    log.info(
+        "models: generator=%s retriever=%s",
+        "codet5-small" if application.state.generator else "gemma (no checkpoint)",
+        "minilm" if application.state.retriever else "lexical (no checkpoint)",
+    )
+    if application.state.generator is not None:
+        threading.Thread(target=application.state.generator.warm, daemon=True,
+                         name="speakql-warm-codet5").start()
 
     # The LLM is optional at boot. A backend that refused to start without a
     # 3 GB download would make the whole demo hostage to it; the explainer
