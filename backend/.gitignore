@@ -19,3 +19,6 @@ ml/results/*.err
 
 # The model cache the trainer container fills.
 ml/.huggingface/
+
+# Stage markers: transient state for a restarted trainer, not a result.
+ml/results/*.done
