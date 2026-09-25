@@ -96,15 +96,24 @@ def same_result(conn, gold: str, predicted: str) -> bool | None:
 def evaluate(rows: list[dict], generate, label: str, conn,
              permitted: Permitted) -> dict:
     result = {"model": label, "n": len(rows), "exact": 0, "execution": 0,
-              "validator": 0, "unrunnable_gold": 0, "by_kind": {},
+              "validator": 0, "unrunnable_gold": 0, "errors": 0, "by_kind": {},
               "examples": []}
     started = time.monotonic()
 
     for row in rows:
         try:
             predicted = generate(row["question"], row["_schema"])
-        except Exception as exc:  # noqa: BLE001 - a dead model ends the run
-            raise SystemExit(f"{label} failed on {row['question']!r}: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            # A model that errors did not answer, which is a wrong answer and
+            # counted as one. The first version raised here, so one HTTP 500
+            # from a loaded-down Ollama threw away a twenty-minute run.
+            result["errors"] += 1
+            predicted = ""
+            if len(result["examples"]) < 8:
+                result["examples"].append({
+                    "question": row["question"], "kind": row["kind"],
+                    "gold": row["sql"], "predicted": f"[error] {exc}"[:200],
+                })
 
         kind = result["by_kind"].setdefault(
             row["kind"], {"n": 0, "exact": 0, "execution": 0, "validator": 0})
@@ -148,6 +157,10 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--checkpoint", default=str(GENERATOR))
     parser.add_argument("--label", default="codet5-small (Spider then warehouse)")
+    parser.add_argument("--router", action="store_true",
+                        help="also measure what the PRODUCT serves: Model B when "
+                             "its confidence clears the threshold, Gemma below it")
+    parser.add_argument("--threshold", type=float, default=0.55)
     parser.add_argument("--out", default="generator-accuracy.json",
                         help="file in ml/results to write -- use a second name "
                              "to keep a stage-1-only run beside the final one")
@@ -195,6 +208,28 @@ def main() -> None:
                     sample, lambda q, s: gemma.generate(q, s).sql,
                     f"{client.model} (off-the-shelf, sample of {len(sample)})",
                     conn, permitted)
+
+                if args.router and codet5.available():
+                    # The number that describes the PRODUCT rather than either
+                    # model: Model B answers, and only when its own confidence
+                    # falls below the threshold does the question cost a Gemma
+                    # call. How often that happens is recorded beside it,
+                    # because "how much is served locally" is half the claim.
+                    served = {"local": 0, "escalated": 0}
+
+                    def routed(question, schema):
+                        candidate = codet5.generate(question, schema)
+                        if candidate.confidence >= args.threshold and candidate.sql:
+                            served["local"] += 1
+                            return candidate.sql
+                        served["escalated"] += 1
+                        return gemma.generate(question, schema).sql
+
+                    everything["router"] = evaluate(
+                        sample, routed,
+                        f"the router: codet5-small, Gemma below {args.threshold} "
+                        f"(sample of {len(sample)})", conn, permitted)
+                    everything["router"]["served"] = served
             else:
                 print("Gemma is not reachable; skipping that row")
 
@@ -206,10 +241,18 @@ def main() -> None:
         print(f"  execution accuracy  {result['execution_pct']:5.1f}%")
         print(f"  exact match         {result['exact_pct']:5.1f}%")
         print(f"  passes validator    {result['validator_pct']:5.1f}%")
+        if result.get("errors"):
+            print(f"  the model errored   {result['errors']} of {result['n']} "
+                  "(counted as wrong)")
         for kind, scores in sorted(result["by_kind"].items()):
             print(f"    {kind:<14} n={scores['n']:<4} "
                   f"execution {scores['execution_pct']:5.1f}%  "
                   f"exact {scores['exact_pct']:5.1f}%")
+        if "served" in result:
+            served = result["served"]
+            total = max(1, served["local"] + served["escalated"])
+            print(f"  served locally      {100 * served['local'] / total:5.1f}% "
+                  f"({served['local']} of {total})")
 
     if everything:
         (RESULTS / args.out).write_text(

@@ -1,0 +1,24 @@
+{
+  "stage": 1,
+  "base_model": "Salesforce/codet5-small",
+  "started_from": "Salesforce/codet5-small",
+  "resumed_from": null,
+  "examples": 7000,
+  "epochs": 1.0,
+  "batch": 8,
+  "accumulate": 2,
+  "lr": 5e-05,
+  "steps": 437,
+  "max_input": 384,
+  "max_target": 160,
+  "history": [
+    {
+      "epoch": 1,
+      "step": 437,
+      "dev_loss": 0.36061768090495694,
+      "minutes": 38.1
+    }
+  ],
+  "minutes": 38.1,
+  "checkpoint": "/srv/ml/checkpoints/generator-stage1"
+}

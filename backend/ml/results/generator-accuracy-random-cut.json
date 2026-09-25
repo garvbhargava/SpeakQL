@@ -1,0 +1,85 @@
+{
+  "codet5-small": {
+    "model": "codet5-small (Spider then warehouse)",
+    "n": 299,
+    "exact": 119,
+    "execution": 145,
+    "validator": 299,
+    "unrunnable_gold": 0,
+    "by_kind": {
+      "new phrasing": {
+        "n": 279,
+        "exact": 115,
+        "execution": 140,
+        "validator": 279,
+        "exact_pct": 41.2,
+        "execution_pct": 50.2,
+        "validator_pct": 100.0
+      },
+      "new shape": {
+        "n": 20,
+        "exact": 4,
+        "execution": 5,
+        "validator": 20,
+        "exact_pct": 20.0,
+        "execution_pct": 25.0,
+        "validator_pct": 100.0
+      }
+    },
+    "examples": [
+      {
+        "question": "What did each region bring in?",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id GROUP BY r.region_name ORDER BY total_amount DESC",
+        "predicted": "SELECT r.region_name, COUNT(*) AS brings FROM customers AS c JOIN regions AS r ON r.region_id = c.region_id GROUP BY r.region_name ORDER BY brings DESC"
+      },
+      {
+        "question": "Top region for November 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-11-01' AND '2025-11-30' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1",
+        "predicted": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1"
+      },
+      {
+        "question": "Top region for December 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-12-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1",
+        "predicted": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1"
+      },
+      {
+        "question": "Top region for October 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-10-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1",
+        "predicted": "SELECT r.region_name, SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE o.order_date BETWEEN '2025-10-01' AND '2025-12-31' GROUP BY r.region_name ORDER BY total_amount DESC LIMIT 1"
+      },
+      {
+        "question": "Give me West's sales total",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'West'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id WHERE c.name = 'West'"
+      },
+      {
+        "question": "Sum of orders in October 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(amount) AS total_amount FROM orders WHERE order_date BETWEEN '2025-10-01' AND '2025-10-31'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'October' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'"
+      },
+      {
+        "question": "Sum of orders in 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(amount) AS total_amount FROM orders WHERE order_date BETWEEN '2025-01-01' AND '2025-12-31'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'Orders' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'"
+      },
+      {
+        "question": "Sum of orders in Q4 2025",
+        "kind": "new phrasing",
+        "gold": "SELECT SUM(amount) AS total_amount FROM orders WHERE order_date BETWEEN '2025-10-01' AND '2025-12-31'",
+        "predicted": "SELECT SUM(o.amount) AS total_amount FROM orders AS o JOIN customers AS c ON c.customer_id = o.customer_id JOIN regions AS r ON r.region_id = c.region_id WHERE r.region_name = 'Order' AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'"
+      }
+    ],
+    "seconds": 436.7,
+    "ms_per_question": 1461,
+    "exact_pct": 39.8,
+    "execution_pct": 48.5,
+    "validator_pct": 100.0
+  }
+}

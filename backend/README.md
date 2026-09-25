@@ -257,6 +257,37 @@ Three things in those tables are worth saying out loud:
   towards covering the whole set of tables a query needs rather than ranking
   one of them first, which is the behaviour the pipeline actually uses.
 
+### Model B — measured
+
+299 held-out questions on the seeded warehouse. Execution accuracy means both
+statements were **run** and returned the same rows.
+`ml/results/generator-accuracy*.json`.
+
+| | execution | exact match | passes validator | per question |
+|---|---:|---:|---:|---:|
+| Spider only — no in-domain stage | 1.7% | 0.0% | 95.3% | 0.9 s |
+| **Spider then this warehouse** | **55.5%** | 44.8% | **100.0%** | 1.4 s |
+
+| Slice of the test set | n | execution | exact match |
+|---|---:|---:|---:|
+| new phrasing of a shape it was trained on | 279 | 57.7% | 46.6% |
+| a shape held out of training entirely | 20 | 25.0% | 20.0% |
+
+What those numbers say, and what they do not:
+
+- **Stage 1 alone is worth 1.7% here.** A model that has read 7,000 Spider
+  questions writes confident, well-formed SQL about the wrong columns. The
+  in-domain stage is not a polish step; it is most of the accuracy.
+- **Everything it writes passes the validator.** Not "usually" — 299 of 299.
+  That is the layer that matters for safety: a wrong answer is a wrong answer,
+  but an unsafe statement never reaches the database.
+- **It is weak on shapes it has never seen** (25%), which is the honest
+  reading of a 60M-parameter model trained on about a thousand pairs. That is
+  what the fallback is for: below the confidence threshold the question goes
+  to Gemma, and the same validator checks its answer.
+- **1.4 seconds a question, on a CPU, against Gemma's ten to twenty-five.**
+  That gap is the reason the small model is the primary one.
+
 ---
 
 ## Getting started
