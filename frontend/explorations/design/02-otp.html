@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpeakQL - Verify code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/ambient.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+<div class="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="grain" aria-hidden="true"></div>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 15V9M8 18V6M12 20V4M16 18V6M20 15V9"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+</svg>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="brand" style="margin-bottom:var(--s5)">
+      <div class="brand-mark"><svg class="i"><use href="#i-logo"/></svg></div>
+      <div class="brand-name">SpeakQL</div>
+    </div>
+
+    <h1 class="t-h1" style="font-size:19px;margin-bottom:6px">Enter your code</h1>
+    <p class="muted t-small" style="margin-bottom:var(--s5)">We sent a 6-digit code to <b style="color:var(--text)">ga&bull;&bull;&bull;@northwind.com</b>. It expires in 10 minutes.</p>
+
+    <div class="otp-row" id="otp-row" style="margin-bottom:var(--s3)">
+      <input class="otp filled" maxlength="1" inputmode="numeric" value="4" aria-label="Digit 1">
+      <input class="otp filled" maxlength="1" inputmode="numeric" value="8" aria-label="Digit 2">
+      <input class="otp filled" maxlength="1" inputmode="numeric" value="1" aria-label="Digit 3">
+      <input class="otp" maxlength="1" inputmode="numeric" aria-label="Digit 4">
+      <input class="otp" maxlength="1" inputmode="numeric" aria-label="Digit 5">
+      <input class="otp" maxlength="1" inputmode="numeric" aria-label="Digit 6">
+    </div>
+
+    <button class="btn btn-block">Verify and continue</button>
+    <button class="back" style="display:flex;gap:6px;align-items:center">
+      <svg class="i i-sm"><use href="#i-arrow-left"/></svg> Use a different email
+    </button>
+
+    <p class="t-small faint" style="margin-top:var(--s4)">Demo code: <code>481920</code></p>
+  </div>
+</div>
+
+<script>
+  Array.from(document.getElementById("otp-row").children).forEach((box, i, all) => {
+    box.addEventListener("input", () => {
+      box.value = box.value.replace(/\D/g, "");
+      box.classList.toggle("filled", !!box.value);
+      if (box.value && i < all.length - 1) all[i + 1].focus();
+    });
+    box.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !box.value && i > 0) all[i - 1].focus(); });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+/* SpeakQL design tokens — the only place values live.
+   Nothing else in the project may hardcode a colour, radius, or duration. */
+:root{
+  /* chart palette — light, per the brief. Also the source of the ambient background. */
+  --chart-1:#B5D4F4;  /* blue    */
+  --chart-2:#9FE1CB;  /* teal    */
+  --chart-3:#F5C4B3;  /* coral   */
+  --chart-4:#F4C0D1;  /* pink    */
+  --chart-5:#CECBF6;  /* purple  */
+  --chart-6:#FAC775;  /* amber   */
+  --chart-grid:#ECEAE3;
+  --chart-label:#6B6A65;
+  --pos:#9FE1CB;      /* positive driver bar */
+  --neg:#F5B7AC;      /* negative driver bar */
+
+  /* surfaces — cool paper, not cream */
+  --paper:#FAFAF8;
+  --surface:#FFFFFF;
+  --surface-alt:#F7F6F2;
+  --surface-sunk:#F1EFE9;
+
+  /* ink */
+  --text:#16181C;
+  --text-muted:#5F6470;
+  --text-faint:#8E94A1;
+  --border:rgba(22,24,28,.09);
+  --border-strong:rgba(22,24,28,.17);
+
+  /* semantic */
+  --accent:#2F6FBF;      --accent-soft:#E8F1FB;   --accent-ink:#164A80;
+  --success:#1D7A5E;     --success-soft:#E4F4ED;
+  --warn:#8A6212;        --warn-soft:#FAF0DC;
+  --danger:#C0392F;      --danger-soft:#FBECEA;
+
+  /* type */
+  --display:"Instrument Serif",Georgia,serif;
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --t-answer:30px;   /* the answer headline           */
+  --t-h1:20px;       /* page titles                   */
+  --t-h2:15px;       /* panel headings                */
+  --t-body:14px;
+  --t-small:12.5px;
+  --t-micro:11px;    /* uppercase labels, meta        */
+
+  /* space — 4px base */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+
+  --radius:8px; --radius-card:12px; --radius-pill:999px;
+  --shadow-card:0 1px 2px rgba(22,24,28,.04), 0 4px 16px rgba(22,24,28,.04);
+  --shadow-lift:0 2px 6px rgba(22,24,28,.07), 0 12px 32px rgba(22,24,28,.07);
+
+  /* motion */
+  --fast:120ms; --base:220ms; --slow:420ms;
+  --ease:cubic-bezier(.2,.7,.3,1);
+}
