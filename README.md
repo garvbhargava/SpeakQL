@@ -79,12 +79,17 @@ person fill them where they stand.
  answer · chart · explanation · SQL        and one query_log row, on every path
 ```
 
-Two models are fine-tuned in-house:
+Two models are fine-tuned in-house, on a CPU, and **measured rather than
+described**:
 
-| | Model | Job | Metric |
+| | Model | Job | Measured |
 |---|---|---|---|
-| **A** | MiniLM bi-encoder, 22M parameters | Find the tables a question is about | recall@10 |
-| **B** | CodeT5-small, 60M parameters | Write the SQL | execution accuracy |
+| **A** | MiniLM bi-encoder, 22M parameters | Find the tables a question is about | recall@3 **99.7%** on this warehouse, up from 38.5% off the shelf; 97.7% on Spider databases it has never seen |
+| **B** | CodeT5-small, 60M parameters | Write the SQL | **55.5%** execution accuracy, 100% of its output accepted by the validator, 1.4 s a question |
+
+Both are optional at runtime: with no checkpoint the pipeline retrieves
+lexically and generates with Gemma, which is the off-the-shelf baseline the
+comparison is measured against.
 
 **Gemma** (`gemma3:4b`, open-weight, running locally under Ollama) is the
 fallback generator below the confidence threshold, and writes the explanation.
@@ -133,8 +138,11 @@ carries this README; each folder carries its own.
 ```
 SpeakQL/
 ├── backend/            ← Backend branch    · API, database, safety layers, models
+│   ├── app · api · auth · core · db · logs · sql · ml · scripts · tests
 │   └── README.md
 ├── frontend/           ← Frontend branch   · the interface
+│   ├── mockup.html         one file, no build, no server
+│   ├── explorations/       the two passes before it
 │   └── README.md
 ├── .gitattributes
 ├── .gitignore
@@ -149,7 +157,7 @@ SpeakQL/
 |---|---|---|
 | [`main`](https://github.com/garvbhargava/SpeakQL/tree/main) | This overview | — |
 | [`Backend`](https://github.com/garvbhargava/SpeakQL/tree/Backend) | API, database layer, the four safety layers, model interfaces | [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md) |
-| [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | The interface — every screen, both roles, all five response modes | `frontend/README.md` |
+| [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | The interface — every screen, both roles, all five response modes | [`frontend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Frontend/frontend/README.md) |
 | [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) | Backend and frontend wired together, one `docker compose up` | root and both folders |
 | `documentation` | The four specification PDFs | — |
 
@@ -161,7 +169,15 @@ interface. `Full-Stack` is where they meet.
 
 ## Quick start
 
-The backend runs today:
+**The interface needs nothing at all** — clone the Frontend branch and open one
+file:
+
+```bash
+git clone -b Frontend https://github.com/garvbhargava/SpeakQL.git
+start SpeakQL/frontend/mockup.html      # or `open` on macOS
+```
+
+**The backend runs today:**
 
 ```bash
 git clone -b Backend https://github.com/garvbhargava/SpeakQL.git
@@ -170,11 +186,18 @@ cp .env.example .env         # then set SECRET_KEY
 make up                      # postgres + api
 make bootstrap               # databases, roles, two tenants on two warehouses
 make test-privileges         # prove the read path cannot write
+make demo                    # ask it the demo questions, end to end
 ```
 
 Then `http://localhost:8000/docs` for the API, or `http://localhost:8000/health`
-for per-role status. Full instructions are in
+for per-role status and which models are loaded. Full instructions are in
 [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md).
+
+Training the two models is one command and runs unattended in a container:
+
+```bash
+docker compose --profile train up -d trainer
+```
 
 ---
 
@@ -186,12 +209,23 @@ presentation; weeks 8–10 are the end-term.
 | Branch | State |
 |---|---|
 | `Backend` | ✅ **Build weeks 1–7 complete, verified on Postgres 15** — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 218 tests, and both models trained in-house on CPU. Measured numbers in [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md#the-two-models) |
-| `Frontend` | ⏳ Next — the interactive mockup, in dark by default |
+| `Frontend` | ✅ **The interface, in one file** — eight screens, both roles, all five response modes, a 34-step walkthrough, dark by default. Awaiting review before it is wired |
 | `Full-Stack` | ⏳ After the frontend is approved |
 | `documentation` | ⏳ Added when the project is finished |
 
 **Deferred to the end-term by design:** SSE streaming, voice input, export, the
-evaluation harness and the ablation table.
+evaluation harness, the ablation table and the confidence-threshold sweep.
+
+### What the demo answers today
+
+```
+Which region had the highest total order amount?
+  West · 482,140.00      codet5-small · confidence 1.0 · 1 ms
+How many shipments have no units recorded?
+  3                      codet5-small · confidence 0.998
+What is the database password?
+  refused at Layer 1 — the intent gatekeeper, before anything is generated
+```
 
 ---
 
