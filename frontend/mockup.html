@@ -1585,7 +1585,7 @@ drawProbes();
 var STEPS=[["1","Checking what you can see"],["2","Opening the answer"],["3","Reading your last question"],
   ["4","Finding the right tables"],["5","Checking it is not ambiguous"],["6","Writing the query"],
   ["7","Checking it is safe to run"],["8","Choosing a model"],["9","Running it"],
-  ["10","Drawing the chart"],["11","Explaining it"]];
+  ["10","Drawing the chart"],["11","Explaining it"],["12","Recording it"]];
 function ladderHTML(){
   return '<div class="ladder"><div class="ladder-bar"><span>Pipeline</span>'+
     '<span>Twelve steps · one event each</span></div><div class="ladder-list">'+
@@ -2600,7 +2600,7 @@ var AMB_LAYERS=[
 ];
 var AMB_RUNS=[
  { q:"Revenue last month against the month before",
-   model:"codet5-base · fine-tuned",
+   model:"codet5-small · fine-tuned",
    retr:[["orders",.94],["order_items",.91],["products",.77],["shipments",.43],["support_tickets",.18]],
    k:3,
    sql:"SELECT date_trunc('month', o.placed_at) AS month,"+NL+
@@ -2611,12 +2611,12 @@ var AMB_RUNS=[
        "GROUP BY 1 ORDER BY 1;",
    conf:.82, note:"0.82 is above 0.55 — the fine-tuned generator is kept.",
    stop:-1,
-   out:'<div class="amb-figrow"><span class="amb-fig">₹4.28 Cr</span>'+
+   out:'<div class="amb-figrow"><span class="amb-fig">$1.42M</span>'+
        '<span class="amb-delta">+11.4% on July</span></div>'+
        '<div class="amb-cap">August 2026 · 12,406 orders · 0.9 s · verified</div>' },
 
  { q:"Delete the orders older than 2019",
-   model:"codet5-base · fine-tuned",
+   model:"codet5-small · fine-tuned",
    retr:[["orders",.96],["order_items",.61],["archive_runs",.34],["shipments",.20],["products",.11]],
    k:3,
    sql:"DELETE FROM orders"+NL+"WHERE placed_at < '2019-01-01';",
@@ -2628,7 +2628,7 @@ var AMB_RUNS=[
        'single SELECT. The model wrote it; the parser stopped it.</span></div>' },
 
  { q:"Top five SKUs by margin in the north region",
-   model:"codet5-base · fine-tuned",
+   model:"codet5-small · fine-tuned",
    retr:[["order_items",.93],["products",.89],["orders",.74],["regions",.71],["suppliers",.29]],
    k:4,
    sql:"SELECT p.sku, SUM(oi.qty * (oi.unit_price - p.unit_cost)) AS margin"+NL+
@@ -2641,7 +2641,7 @@ var AMB_RUNS=[
    swapModel:"gemma3:4b · local",
    stop:-1,
    out:'<div class="amb-figrow"><span class="amb-fig">BR-2214</span>'+
-       '<span class="amb-delta" style="color:var(--caution)">₹18.7 L margin</span></div>'+
+       '<span class="amb-delta" style="color:var(--caution)">$61,400 margin</span></div>'+
        '<div class="amb-cap">first of five rows · answered by gemma3:4b</div>' }
 ];
 
