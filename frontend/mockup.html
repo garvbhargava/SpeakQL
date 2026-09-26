@@ -1,0 +1,2805 @@
+<title>SpeakQL Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ==================================================================
+   SpeakQL Console -- interactive mockup, complete flow
+   Palette and type are the token set from Frontend Specification 3.1.
+
+   ONE token set, two grounds. Dark is the default -- an analyst reads
+   this console for hours and the numbers are the only thing that should
+   glow. The light theme below re-values the same names and nothing
+   downstream knows which one is on: no rule anywhere in this file names
+   a literal colour, so the whole product turns over on this block.
+=================================================================== */
+:root{
+  /* --- surfaces: ground, the surface things sit on, the recessed one --- */
+  --paper:#0A0E10; --panel:#111719; --sunk:#161D20;
+  /* --- ink: primary, secondary, muted --- */
+  --ink:#E9EFEE; --ink2:#9FACAA; --ink3:#687674;
+  --rule:#212A2D; --rule2:#2C383B;
+  /* --- meaning. never decorative. --- */
+  --verified:#3FD68B; --pending:#A78BFA; --awaiting:#E3A55C;
+  --blocked:#FF6E6E; --clarify:#5CA8F2; --refusal:#7C8886; --caution:#E3A55C;
+  --working:#4A9EFF;
+  --s1:#57A9FF; --s2:#FF9A5C; --s3:#42D9A0;
+
+  /* --- derived: the values that must know which way the ground faces --- */
+  --solid:#E9EFEE;        /* an ink-filled surface: primary button, chip */
+  --on-solid:#0A0E10;     /* and the text that sits on it */
+  --ring:rgba(233,239,238,.09);          /* focus halo */
+  --focus-edge:#4A9EFF;   /* the border a focused field takes. Ink is too loud here */
+  --glow:rgba(74,158,255,.20);           /* what is working, glowing softly */
+  --tint:15%;             /* status wash against a surface */
+  --tint2:26%;            /* the heavier wash */
+  --tint-edge:54%;        /* how much a status colour claims of a border */
+  --lift:0 1px 2px rgba(0,0,0,.44), 0 10px 30px rgba(0,0,0,.38);
+  --lift-up:0 -12px 26px -20px rgba(0,0,0,.9);   /* the composer, lifting off the feed */
+  --sweep:rgba(87,169,255,.16);          /* the light that crosses a working bar */
+  /* a mask stop is an opacity, not a colour -- but it is still a hex literal,
+     so it lives here rather than in a rule, and the audit stays true */
+  --fade-mask:radial-gradient(ellipse 78% 62% at 50% 42%,#000,transparent 100%);
+  /* the tour bar is the one inverted slab; on a dark ground it stops
+     inverting and becomes a raised surface instead. */
+  --bar-bg:#161D20; --bar-ink:#E9EFEE; --bar-line:rgba(233,239,238,.13);
+  --bar-hover:rgba(233,239,238,.07);
+  --bar-go:#E9EFEE; --bar-go-ink:#0A0E10; --bar-go-hover:#FFFFFF;
+
+  --sans:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --nav-w:246px; --bar-h:52px; --tour-h:58px; --r:3px;
+}
+
+/* The porcelain console, kept as the secondary theme. Same names, same
+   meanings, re-valued for a light ground. Printed documents use these. */
+[data-theme="light"]{
+  --paper:#EDEEEC; --panel:#FFFFFF; --sunk:#F5F6F4;
+  --ink:#14181A; --ink2:#4C5254; --ink3:#7F8683;
+  --rule:#DEE1DE; --rule2:#C7CBC7;
+  --verified:#0E6B4E; --pending:#6242BE; --awaiting:#8F5400;
+  --blocked:#AF241C; --clarify:#1C5C9E; --refusal:#5A615E; --caution:#8F5400;
+  --working:#1C5C9E;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --solid:#14181A; --on-solid:#FFFFFF;
+  --ring:rgba(20,24,26,.06);
+  --focus-edge:#14181A;
+  --glow:rgba(28,92,158,.13);
+  --tint:7%; --tint2:16%; --tint-edge:34%;
+  --lift:0 1px 2px rgba(20,24,26,.06), 0 10px 30px rgba(20,24,26,.10);
+  --lift-up:0 -12px 26px -20px rgba(20,24,26,.28);
+  --sweep:rgba(42,120,214,.13);
+  --bar-bg:#14181A; --bar-ink:#FFFFFF; --bar-line:rgba(255,255,255,.14);
+  --bar-hover:rgba(255,255,255,.10);
+  --bar-go:#FFFFFF; --bar-go-ink:#14181A; --bar-go-hover:#E9EAE8;
+}
+*{box-sizing:border-box}
+/* tell the browser which way the ground faces, so native scrollbars,
+   selection and form controls follow the theme instead of fighting it */
+:root{color-scheme:dark}
+[data-theme="light"]{color-scheme:light}
+::selection{background:color-mix(in srgb,var(--working) 34%,transparent)}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--rule2);border-radius:6px;
+  border:3px solid var(--paper);background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--ink3);background-clip:padding-box;
+  border:3px solid var(--paper)}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+:focus-visible{outline:2px solid var(--s1);outline-offset:2px;border-radius:2px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+
+/* ---------- root switch ---------- */
+#authRoot,#appRoot{position:absolute;inset:0;bottom:var(--tour-h)}
+#authRoot{display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,.96fr);overflow:hidden}
+.auth-pane{overflow-y:auto;display:grid;place-items:center;padding:30px 38px;position:relative}
+#appRoot{display:grid;grid-template-columns:var(--nav-w) 1fr}
+.boot{animation:boot .5s cubic-bezier(.2,.8,.25,1) both}
+@keyframes boot{from{opacity:0;transform:scale(.988)}to{opacity:1;transform:none}}
+
+/* ================= AUTH ================= */
+.auth{width:100%;max-width:430px}
+.auth-mark{display:flex;align-items:center;gap:9px;margin-bottom:30px}
+.brand-mark{width:17px;height:17px;border:1.5px solid var(--ink);border-radius:2px;
+  display:grid;place-items:center;flex:0 0 auto}
+.brand-mark::after{content:"";width:6px;height:6px;background:var(--ink);border-radius:1px}
+.brand-name{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.brand-name span{color:var(--ink3);font-weight:500}
+.astep{display:none}
+.astep.on{display:block;animation:slideIn .3s cubic-bezier(.2,.8,.25,1) both}
+.astep.out{animation:slideOut .18s ease-in both}
+@keyframes slideIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes slideOut{from{opacity:1}to{opacity:0;transform:translateX(-12px)}}
+.auth h2{font-size:22px;font-weight:600;letter-spacing:-.018em;margin:0 0 8px;
+  line-height:1.25;text-wrap:balance}
+.auth p.lede{color:var(--ink2);margin:0 0 20px;font-size:13.5px;line-height:1.6}
+.field{width:100%;border:1px solid var(--rule2);border-radius:var(--r);padding:11px 13px;
+  font:inherit;font-size:14px;background:var(--panel);color:var(--ink);outline:none;
+  transition:border-color .15s,box-shadow .15s}
+.field:focus{border-color:var(--focus-edge);box-shadow:0 0 0 3px var(--ring)}
+.hint{font-size:12.5px;margin-top:10px;color:var(--ink2);min-height:36px;display:flex;gap:8px;
+  line-height:1.5}
+.hint .dot{width:5px;height:5px;border-radius:50%;margin-top:6px;flex:0 0 auto;
+  background:var(--ink3);transition:background .2s}
+.hint.ok .dot{background:var(--verified)}
+.hint.no .dot{background:var(--blocked)}
+.hint.new .dot{background:var(--clarify)}
+.hint span:last-child{animation:fade .25s ease-out}
+.tryrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+.try{border:1px dashed var(--rule2);border-radius:var(--r);padding:4px 9px;
+  font-family:var(--mono);font-size:11px;color:var(--ink2);transition:border-color .12s,color .12s}
+.try:hover{border-color:var(--ink2);border-style:solid;color:var(--ink)}
+.primer{margin-top:30px;padding-top:18px;border-top:1px solid var(--rule2)}
+.primer p{margin:0;font-size:12.5px;line-height:1.6;color:var(--ink2)}
+.primer p b{color:var(--ink)}
+.primer-legs{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:12px;
+  font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+.primer-legs b{color:var(--ink2);font-weight:500}
+.choice{display:flex;flex-direction:column;gap:10px;margin:20px 0}
+.choice button{text-align:left;padding:14px 16px;border:1px solid var(--rule2);border-radius:var(--r);
+  background:var(--panel);transition:border-color .15s,background .15s,transform .15s}
+.choice button:hover{border-color:var(--ink);background:var(--sunk);transform:translateX(2px)}
+.choice .t{font-weight:600;font-size:13.5px;margin-bottom:3px}
+.choice .d{font-size:12.5px;color:var(--ink2);line-height:1.5}
+.code{display:flex;gap:8px;margin:20px 0 6px}
+.code input{width:46px;height:54px;text-align:center;font-family:var(--mono);font-size:21px;
+  border:1px solid var(--rule2);border-radius:var(--r);background:var(--panel);color:var(--ink);
+  outline:none;transition:border-color .15s,box-shadow .15s,transform .12s}
+.code input:focus{border-color:var(--focus-edge);box-shadow:0 0 0 3px var(--ring)}
+.code input.pop{animation:pop .2s ease-out}
+@keyframes pop{50%{transform:scale(1.09)}}
+.verify{display:flex;flex-direction:column;align-items:center;gap:16px;padding:34px 0 10px;text-align:center}
+.ring{width:44px;height:44px;border:2px solid var(--rule2);border-top-color:var(--ink);
+  border-radius:50%;animation:spin .72s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tickmark{width:44px;height:44px;border-radius:50%;background:var(--verified);color:var(--paper);
+  display:grid;place-items:center;font-size:21px;animation:pop2 .38s cubic-bezier(.2,1.5,.4,1) both}
+@keyframes pop2{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+.vlines{font-size:13px;color:var(--ink2);min-height:42px}
+.vlines div{animation:fade .3s ease-out}
+
+/* ---------- staged entrance: the form assembles itself ---------- */
+.astep.on>*{animation:rise .34s cubic-bezier(.2,.8,.25,1) both}
+.astep.on>*:nth-child(1){animation-delay:.02s} .astep.on>*:nth-child(2){animation-delay:.07s}
+.astep.on>*:nth-child(3){animation-delay:.12s} .astep.on>*:nth-child(4){animation-delay:.17s}
+.astep.on>*:nth-child(5){animation-delay:.22s} .astep.on>*:nth-child(6){animation-delay:.27s}
+.astep.on>*:nth-child(7){animation-delay:.32s}
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.auth-mark{animation:rise .4s cubic-bezier(.2,.8,.25,1) both}
+.brand-mark{position:relative;transition:transform .5s cubic-bezier(.2,.8,.25,1)}
+.brand-mark::before{content:"";position:absolute;inset:-6px;border-radius:5px;
+  background:radial-gradient(circle,var(--glow),transparent 70%);opacity:0;
+  animation:markPulse 3.4s ease-in-out infinite}
+@keyframes markPulse{0%,100%{opacity:0;transform:scale(.7)}50%{opacity:1;transform:scale(1)}}
+.field{position:relative;z-index:1}
+
+/* ================= THE RIGHT HALF OF THE DOOR ================= */
+.stage-pane{position:relative;overflow:hidden auto;background:var(--paper);
+  border-left:1px solid var(--rule);display:grid;place-items:center;padding:30px 34px}
+.amb-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(var(--rule) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--rule) 1px,transparent 1px);
+  background-size:34px 34px;
+  -webkit-mask-image:var(--fade-mask);mask-image:var(--fade-mask)}
+.amb-glow{position:absolute;left:50%;top:38%;width:min(560px,86%);aspect-ratio:1;
+  transform:translate(-50%,-50%);pointer-events:none;border-radius:50%;
+  background:radial-gradient(circle,var(--glow),transparent 66%);
+  filter:blur(12px);opacity:.85;transition:top .9s cubic-bezier(.2,.8,.25,1),opacity .9s}
+.amb-inner{position:relative;width:100%;max-width:430px;z-index:1}
+.amb-lede{margin-bottom:18px}
+.amb-lede h3{font-size:20px;font-weight:600;letter-spacing:-.018em;margin:7px 0 7px}
+.amb-lede p{margin:0;font-size:12.5px;line-height:1.62;color:var(--ink2);max-width:44ch}
+
+.amb-card{border:1px solid var(--rule2);border-radius:var(--r);background:var(--panel);
+  box-shadow:var(--lift);overflow:hidden}
+.amb-bar{position:relative;display:flex;align-items:center;gap:8px;padding:7px 12px;
+  background:var(--sunk);border-bottom:1px solid var(--rule);font-family:var(--mono);
+  font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);overflow:hidden}
+.amb-bar::after{content:"";position:absolute;left:-40%;top:0;bottom:0;width:40%;
+  background:linear-gradient(90deg,transparent,var(--sweep),transparent);animation:sweep 1.9s linear infinite}
+.amb-card.settled .amb-bar::after{display:none}
+.amb-dot{width:6px;height:6px;border-radius:50%;background:var(--working);flex:0 0 auto;
+  box-shadow:0 0 0 0 var(--glow);animation:beacon 1.6s ease-out infinite}
+.amb-card.settled .amb-dot{animation:none;background:var(--verified)}
+.amb-card.refused .amb-dot{animation:none;background:var(--blocked)}
+@keyframes beacon{0%{box-shadow:0 0 0 0 var(--glow)}70%{box-shadow:0 0 0 7px transparent}
+  100%{box-shadow:0 0 0 0 transparent}}
+.amb-model{margin-left:auto;text-transform:none;letter-spacing:.03em;font-size:10px;color:var(--ink2)}
+/* Held at the height of the tallest run, so the card fills in downwards
+   instead of growing and shoving the page around under the reader. */
+.amb-body{padding:13px 14px;min-height:518px;display:flex;flex-direction:column;gap:11px}
+.amb-q{font-size:13.5px;font-weight:600;letter-spacing:-.01em;line-height:1.4;display:flex;gap:8px;
+  align-items:baseline;min-height:20px}
+.amb-qi{font-family:var(--mono);color:var(--working);flex:0 0 auto}
+.amb-cur{display:inline-block;width:6px;height:13px;background:var(--working);vertical-align:-2px;
+  animation:blink .82s step-end infinite;flex:0 0 auto}
+.amb-cur.off{display:none}
+.amb-sec{animation:fade .3s ease-out both}
+.amb-lab{font-family:var(--mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink3);margin-bottom:6px}
+.amb-rr{display:grid;grid-template-columns:112px 1fr 34px;align-items:center;gap:9px;height:20px;
+  font-family:var(--mono);font-size:10.5px;color:var(--ink2);animation:fade .24s ease-out both}
+.amb-rr .nm{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.amb-rr .tr{height:3px;background:var(--rule);border-radius:2px;overflow:hidden}
+.amb-rr .tr i{display:block;height:100%;width:0;background:var(--s1);border-radius:2px;
+  transition:width .52s cubic-bezier(.22,.9,.28,1)}
+.amb-rr .sc{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink3)}
+.amb-rr.out{opacity:.36} .amb-rr.out .tr i{background:var(--rule2)}
+.amb-cut{font-family:var(--mono);font-size:9.5px;color:var(--ink3);padding:4px 0 0;
+  border-top:1px dashed var(--rule);margin-top:5px;animation:fade .3s ease-out both}
+.amb-sql{margin:0;font-family:var(--mono);font-size:11px;line-height:1.62;white-space:pre-wrap;
+  word-break:break-word;color:var(--ink);min-height:17px}
+.amb-sql .k{color:var(--s1);font-weight:500} .amb-sql .s{color:var(--s3)} .amb-sql .f{color:var(--s2)}
+.amb-sql .bad{color:var(--blocked);font-weight:600}
+.amb-ly{display:flex;align-items:center;gap:9px;height:20px;font-size:11.5px;color:var(--ink3);
+  transition:color .25s;animation:fade .24s ease-out both}
+.amb-ly .g{width:11px;flex:0 0 auto;font-family:var(--mono);font-size:10px;color:var(--rule2)}
+.amb-ly.pass{color:var(--ink2)} .amb-ly.pass .g{color:var(--verified)}
+.amb-ly.stop{color:var(--blocked);font-weight:600} .amb-ly.stop .g{color:var(--blocked)}
+.amb-ly .n{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--ink3)}
+.amb-confrow{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10.5px;
+  color:var(--ink2)}
+.amb-meter{flex:1 1 auto;height:4px;background:var(--rule);border-radius:3px;overflow:hidden;
+  position:relative}
+.amb-meter i{display:block;height:100%;width:0;background:var(--verified);border-radius:3px;
+  transition:width .68s cubic-bezier(.22,.9,.28,1)}
+.amb-meter.low i{background:var(--caution)}
+.amb-meter::after{content:"";position:absolute;left:55%;top:-3px;bottom:-3px;width:1px;
+  background:var(--ink3)}
+.amb-confval{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:500;min-width:30px;
+  text-align:right;font-family:var(--mono);font-size:10.5px}
+.amb-confnote{font-family:var(--mono);font-size:9.5px;color:var(--ink3);margin-top:5px;line-height:1.5}
+.amb-out{margin-top:auto;padding-top:11px;border-top:1px solid var(--rule)}
+.amb-fig{font-family:var(--mono);font-size:29px;font-weight:500;letter-spacing:-.02em;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.amb-figrow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.amb-delta{font-family:var(--mono);font-size:10.5px;color:var(--verified)}
+.amb-cap{font-size:11.5px;color:var(--ink3);margin-top:4px}
+.amb-stop{display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.5;
+  color:var(--ink2);border-left:2px solid var(--blocked);padding-left:10px}
+.amb-stop b{color:var(--blocked);font-weight:600}
+.amb-claims{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:16px;font-family:var(--mono);
+  font-size:10px;color:var(--ink3)}
+.amb-claims span{display:inline-flex;align-items:center;gap:6px}
+.amb-claims i{width:5px;height:5px;border-radius:50%;background:var(--ink3)}
+.amb-claims i.verified{background:var(--verified)} .amb-claims i.clarify{background:var(--clarify)}
+.amb-claims i.pending{background:var(--pending)}
+
+/* ---------- theme switch: proof that one token set carries both ----------
+   It lives in the walkthrough bar rather than floating over the console,
+   because a fixed control at top right lands on the persona segment. */
+.theme-tog{display:flex;align-items:center;gap:7px;height:28px;padding:0 11px;
+  border:1px solid var(--bar-line);border-radius:14px;color:var(--bar-ink);opacity:.72;
+  font-size:11.5px;flex:0 0 auto;transition:opacity .14s,background .14s}
+.theme-tog:hover{opacity:1;background:var(--bar-hover)}
+.tt-ic{font-size:12px;line-height:1}
+.tt-lab{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+@media (max-width:900px){.tt-lab{display:none}}
+
+/* ================= SHELL ================= */
+.nav{background:var(--panel);border-right:1px solid var(--rule);display:flex;
+  flex-direction:column;overflow:hidden}
+.brand{display:flex;align-items:center;gap:8px;height:var(--bar-h);padding:0 16px;
+  border-bottom:1px solid var(--rule);flex:0 0 auto}
+/* A work name is short; an email address is not, and a personal workspace is
+   named by one. Every text column in these two identity blocks needs
+   min-width:0, or one long address pushes the whole navigator open. */
+.org{padding:13px 16px;border-bottom:1px solid var(--rule);display:flex;gap:9px;align-items:flex-start}
+.org>div{min-width:0;flex:1 1 auto}
+.avatar{width:24px;height:24px;border:1px solid var(--rule2);border-radius:2px;flex:0 0 auto;
+  display:grid;place-items:center;font-family:var(--mono);font-size:9px;color:var(--ink2);
+  background:var(--sunk)}
+.org-name{font-weight:600;font-size:13px;line-height:1.3;display:flex;align-items:center;gap:6px;
+  min-width:0}
+.org-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.org-name .chip{flex:0 0 auto}
+.org-sub{font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-scroll{flex:1 1 auto;overflow-y:auto;padding:8px 0}
+.nav-head{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink3);padding:12px 16px 5px;display:flex;justify-content:space-between}
+.nav-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 16px;font-size:13.5px;
+  text-align:left;border-left:2px solid transparent;transition:background .12s,border-color .18s}
+.nav-item:hover{background:var(--sunk)}
+.nav-item[aria-current="true"]{background:var(--sunk);border-left-color:var(--ink);font-weight:600}
+.nav-item .ic{width:15px;flex:0 0 auto;color:var(--ink2);display:grid;place-items:center}
+.nav-count{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink3);
+  font-variant-numeric:tabular-nums}
+.badge{margin-left:auto;font-family:var(--mono);font-size:10px;min-width:17px;height:17px;padding:0 5px;
+  border-radius:2px;background:var(--blocked);color:var(--paper);display:grid;place-items:center;font-weight:600}
+.badge.bump{animation:bump .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes bump{40%{transform:scale(1.35)}}
+.db-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 16px;text-align:left;
+  border-left:2px solid transparent;animation:fade .3s ease-out}
+.db-item:hover{background:var(--sunk)}
+.db-item[aria-current="true"]{background:var(--sunk);border-left-color:var(--ink)}
+.db-name{font-size:13px;font-weight:500}
+.db-sub{font-family:var(--mono);font-size:10px;color:var(--ink3)}
+.thread{display:block;width:100%;text-align:left;padding:6px 16px;font-size:12.5px;color:var(--ink2)}
+.thread:hover{background:var(--sunk)}
+/* the engine block: the LLM is the centre of this project and had appeared
+   nowhere in the product chrome. It also fills the nav's dead space. */
+.engine{flex:0 0 auto;border-top:1px solid var(--rule);padding:11px 16px 12px;background:var(--panel)}
+.eng-top{display:flex;align-items:center;gap:7px}
+.eng-dot{width:6px;height:6px;border-radius:50%;background:var(--ink3);flex:0 0 auto;
+  transition:background .25s}
+.engine.on .eng-dot{background:var(--working);animation:beacon 1.6s ease-out infinite}
+.eng-lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink3)}
+.eng-state{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink3);
+  transition:color .25s}
+.engine.on .eng-state{color:var(--working)}
+.eng-model{font-size:12.5px;color:var(--ink);margin-top:5px;font-weight:500;letter-spacing:-.01em}
+.eng-sub{font-family:var(--mono);font-size:9.5px;color:var(--ink3);margin-top:2px;line-height:1.55}
+.navfoot{flex:0 0 auto;border-top:1px solid var(--rule);padding:11px 16px 13px;background:var(--sunk)}
+.who{display:flex;align-items:center;gap:8px}
+.who>div{min-width:0;flex:1 1 auto}
+.who-name{font-size:12.5px;font-weight:600;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who-role{font-family:var(--mono);font-size:10px;color:var(--ink3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.signout{flex:0 0 auto;margin-left:auto;border:1px solid var(--rule2);border-radius:var(--r);width:26px;height:24px;
+  display:grid;place-items:center;background:var(--panel);font-size:11px}
+.signout:hover{background:var(--panel);border-color:var(--ink2)}
+
+.stage{position:relative;display:flex;flex-direction:column;overflow:hidden;background:var(--paper);
+  min-width:0}
+/* content used to be guillotined by the top bar's edge as it scrolled under it;
+   it fades out now instead of being cut in half mid-word */
+.stage::after{content:"";position:absolute;left:0;right:0;top:var(--bar-h);height:22px;z-index:2;
+  pointer-events:none;background:linear-gradient(var(--paper),transparent)}
+.topbar{height:var(--bar-h);flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:0 22px;
+  border-bottom:1px solid var(--rule);background:var(--panel)}
+.topbar h1{font-size:14.5px;font-weight:600;margin:0}
+.topbar .ctx{font-family:var(--mono);font-size:12px;color:var(--ink3)}
+.topbar .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.mode-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink3)}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--rule2);
+  border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.seg button{padding:5px 10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink2);transition:background .16s,color .16s;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--solid);color:var(--on-solid);font-weight:500}
+.seg button:disabled{opacity:.35;cursor:not-allowed}
+.scroll{flex:1 1 auto;overflow-y:auto;scroll-behavior:smooth}
+.wrap{max-width:880px;margin:0 auto;padding:26px 22px 34px}
+.screen{display:none}
+.screen.on{display:block;animation:screenIn .3s cubic-bezier(.2,.8,.25,1) both}
+@keyframes screenIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+/* ---------- type ---------- */
+h2.title{font-size:22px;font-weight:600;letter-spacing:-.015em;margin:0 0 6px;text-wrap:balance}
+p.sub{color:var(--ink2);margin:0 0 20px;max-width:64ch}
+h3.sec{font-size:13px;font-weight:600;margin:0 0 10px}
+.eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink3)}
+
+/* ---------- primitives ---------- */
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px;border-radius:2px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+  border:1px solid var(--rule2);color:var(--ink2);background:var(--panel);white-space:nowrap}
+.chip .dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+.chip.verified{color:var(--verified);border-color:color-mix(in srgb,var(--verified) var(--tint-edge),var(--rule2))}
+.chip.pending{color:var(--pending);border-color:color-mix(in srgb,var(--pending) var(--tint-edge),var(--rule2))}
+.chip.awaiting{color:var(--awaiting);border-color:color-mix(in srgb,var(--awaiting) var(--tint-edge),var(--rule2))}
+.chip.blocked{color:var(--blocked);border-color:color-mix(in srgb,var(--blocked) var(--tint-edge),var(--rule2))}
+.chip.solid{background:var(--solid);color:var(--on-solid);border-color:var(--solid)}
+.strip{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--rule);border-left-width:2px;
+  border-radius:var(--r);background:var(--sunk);font-size:12.5px;line-height:1.5;color:var(--ink2)}
+.strip b{color:var(--ink);font-weight:600}
+.strip code{font-family:var(--mono);font-size:11.5px}
+.strip.caution{border-left-color:var(--caution)}
+.strip.verified{border-left-color:var(--verified)}
+.strip.pending{border-left-color:var(--pending)}
+.strip.blocked{border-left-color:var(--blocked)}
+.strip.awaiting{border-left-color:var(--awaiting)}
+.strip.neutral{border-left-color:var(--rule2)}
+.btn{border:1px solid var(--rule2);border-radius:var(--r);padding:6px 12px;font-size:12.5px;
+  background:var(--panel);transition:background .12s,border-color .12s,opacity .12s}
+.btn:hover{background:var(--sunk)}
+.btn.primary{background:var(--solid);color:var(--on-solid);border-color:var(--solid);font-weight:500}
+.btn.primary:hover{filter:brightness(1.12)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ---------- answers ---------- */
+.turn{margin-bottom:22px}
+.asked{display:flex;gap:9px;align-items:baseline;margin-bottom:11px}
+.asked .q{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.answer{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;
+  animation:cardIn .32s cubic-bezier(.2,.8,.25,1) both}
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.seal{display:flex;align-items:center;gap:9px;min-height:32px;padding:6px 13px;background:var(--sunk);
+  border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:10.5px;color:var(--ink2);
+  letter-spacing:.03em;flex-wrap:wrap}
+.seal .sep{color:var(--rule2)}
+.seal .mode{font-weight:600;text-transform:uppercase;letter-spacing:.07em}
+.seal.answer-t .mode{color:var(--verified)}
+.seal.clarify-t{background:color-mix(in srgb,var(--clarify) var(--tint),var(--sunk))}
+.seal.clarify-t .mode{color:var(--clarify)}
+.seal.blocked-t{background:color-mix(in srgb,var(--blocked) var(--tint),var(--sunk))}
+.seal.blocked-t .mode{color:var(--blocked)}
+.seal.refusal-t .mode{color:var(--refusal)}
+.seal.caution-t{background:color-mix(in srgb,var(--caution) var(--tint),var(--sunk))}
+.seal.caution-t .mode{color:var(--caution)}
+.seal .pend{color:var(--pending);font-weight:600;animation:fade .35s ease-out}
+.body{padding:16px 18px 18px}
+.headline{font-family:var(--mono);font-size:34px;font-weight:500;letter-spacing:-.02em;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.headline-row{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;margin-bottom:3px}
+.delta{font-family:var(--mono);font-size:11px;color:var(--caution)}
+.delta.done{color:var(--verified)}
+.headline-cap{font-size:12.5px;color:var(--ink3);margin-bottom:16px}
+.chart{margin:4px 0 16px}
+.bar-row{display:grid;grid-template-columns:66px 1fr;align-items:center;gap:11px;height:26px}
+.bar-lab{font-family:var(--mono);font-size:11px;color:var(--ink2);text-align:right}
+.bar-track{display:flex;align-items:center;gap:9px}
+.bar{height:15px;background:var(--s1);border-radius:1px;width:0;
+  transition:width .66s cubic-bezier(.22,.9,.28,1)}
+.bar-val{font-family:var(--mono);font-size:11px;color:var(--ink2);white-space:nowrap;opacity:0;
+  transition:opacity .3s .25s}
+.bar-val.in{opacity:1}
+.explain{font-size:13.5px;line-height:1.62;margin:0 0 16px;max-width:66ch}
+.explain code{font-family:var(--mono);font-size:12px;background:var(--sunk);border:1px solid var(--rule);
+  border-radius:2px;padding:1px 4px}
+.sqlbox{border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;margin-bottom:14px}
+.sqlbar{display:flex;justify-content:space-between;gap:10px;padding:6px 11px;background:var(--sunk);
+  border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink3)}
+.sql{margin:0;padding:11px 13px;font-family:var(--mono);font-size:11.5px;line-height:1.65;
+  overflow-x:auto;background:var(--panel);color:var(--ink)}
+.sql .k{color:var(--s1);font-weight:500}
+.sql .s{color:var(--s3)}
+.sql .f{color:var(--s2)}
+.sql .strike{text-decoration:line-through;text-decoration-color:var(--blocked);opacity:.6}
+.foot{display:flex;align-items:center;gap:9px;padding-top:13px;border-top:1px solid var(--rule);
+  flex-wrap:wrap}
+.foot .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink3)}
+.foot .right{margin-left:auto;display:flex;gap:7px}
+.icon-btn{border:1px solid var(--rule2);border-radius:var(--r);width:26px;height:24px;display:grid;
+  place-items:center;background:var(--panel);transition:background .12s}
+.icon-btn:hover{background:var(--sunk)}
+.icon-btn.picked{background:var(--solid);color:var(--on-solid);border-color:var(--solid)}
+
+/* tables */
+.tbl-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;gap:10px}
+.tbl-head h4{font-size:13px;font-weight:600;margin:0}
+.tbl-wrap{border:1px solid var(--rule);border-radius:var(--r);overflow-x:auto;margin-bottom:14px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink3);text-align:left;padding:8px 12px;background:var(--sunk);
+  border-bottom:1px solid var(--rule);font-weight:400;white-space:nowrap}
+td{padding:7px 12px;border-bottom:1px solid var(--rule);white-space:nowrap;transition:background .3s}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+td.role{color:var(--ink2)}
+tr.filled td{background:color-mix(in srgb,var(--verified) var(--tint),var(--panel))}
+tr.filled td:first-child{box-shadow:inset 2px 0 0 var(--verified)}
+tr.proposed td{background:color-mix(in srgb,var(--pending) var(--tint),var(--panel))}
+tr.proposed td:first-child{box-shadow:inset 2px 0 0 var(--pending)}
+.gap{display:inline-block;min-width:44px;border-bottom:1.5px dashed var(--caution);height:16px;
+  vertical-align:-3px;background:none;transition:background .12s}
+button.gap:hover{background:color-mix(in srgb,var(--caution) var(--tint2),transparent)}
+.gap-input{font-family:var(--mono);font-size:12.5px;width:64px;text-align:right;
+  border:1px solid var(--ink);border-radius:2px;padding:2px 5px;background:var(--panel);color:var(--ink);
+  outline:none;animation:pop .2s ease-out}
+
+/* ---- the working surface ----
+   The twelve steps and the live detail used to stack, which ran past 700px
+   on a 1440-wide screen with both side gutters empty. They are two columns
+   of one card now: what is happening on the left, what it produced on the
+   right. Once the answer lands the right column empties and the card
+   collapses back to a single summary line. */
+.work{display:grid;grid-template-columns:338px minmax(0,1fr);border:1px solid var(--rule);
+  border-radius:var(--r);background:var(--panel);overflow:hidden;
+  transition:grid-template-columns .3s cubic-bezier(.2,.8,.25,1)}
+.work-live{min-width:0;display:flex;flex-direction:column}
+.work-live:empty{display:none}
+.work .ladder{border:0;border-right:1px solid var(--rule);border-radius:0;background:transparent}
+.work .gen{border:0;border-bottom:1px solid var(--rule);border-radius:0;margin-top:0;
+  background:transparent}
+.work .gen:last-child{border-bottom:0}
+/* the column is narrower than the full-width ladder was, so both the label and
+   its trailing note have to be allowed to truncate rather than collide */
+.step .lbl{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step .meta{flex:0 0 auto;max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.work.done{grid-template-columns:minmax(0,1fr)}
+.work.done .ladder{border-right:0}
+@media (max-width:1100px){
+  .work{grid-template-columns:minmax(0,1fr)}
+  .work .ladder{border-right:0;border-bottom:1px solid var(--rule)}
+}
+
+/* stage ladder */
+.ladder{border:1px solid var(--rule);border-radius:var(--r);background:var(--panel);overflow:hidden}
+.ladder-bar{display:flex;justify-content:space-between;padding:7px 12px;background:var(--sunk);
+  border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink3)}
+.ladder-list{padding:5px 0}
+.step{display:flex;align-items:center;gap:10px;height:21px;padding:0 12px;font-size:12.5px;
+  color:var(--ink3);transition:color .25s}
+.step .g{width:11px;flex:0 0 auto;display:grid;place-items:center;font-family:var(--mono);font-size:10px}
+.step .n{font-family:var(--mono);font-size:10px;color:var(--rule2);width:15px;flex:0 0 auto}
+.step .meta{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink3);
+  animation:fade .25s ease-out}
+.step.working{color:var(--working);font-weight:500}
+.step.working .g{color:var(--working);animation:pulse .95s ease-in-out infinite}
+.step.done{color:var(--ink2)}
+.step.done .g{color:var(--verified)}
+.step.skip{color:var(--ink3)}
+.step.fail,.step.fail .g{color:var(--blocked)}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+.ladder-sum{display:flex;align-items:center;gap:9px;padding:9px 12px;font-family:var(--mono);
+  font-size:11px;color:var(--ink2);animation:fade .3s ease-out}
+
+/* layers */
+.layers{border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;margin-bottom:14px}
+.layer{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:12.5px;
+  border-bottom:1px solid var(--rule);color:var(--ink2);transition:background .3s,opacity .3s}
+.layer:last-child{border-bottom:0}
+.layer .g{width:13px;font-family:var(--mono);font-size:11px;color:var(--verified);
+  transition:color .25s}
+.layer.pend .g{color:var(--rule2)}
+.layer.caught{background:color-mix(in srgb,var(--blocked) var(--tint),var(--panel));color:var(--ink);
+  font-weight:500}
+.layer.caught .g{color:var(--blocked)}
+.layer .what{margin-left:auto;font-size:11.5px;color:var(--ink3);font-weight:400;text-align:right}
+.layer.tick{animation:tick .4s ease-out}
+@keyframes tick{from{background:color-mix(in srgb,var(--verified) var(--tint2),var(--panel))}}
+
+/* options */
+.opts{display:flex;flex-direction:column;gap:7px;margin:2px 0 14px}
+.opt{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--rule2);
+  border-radius:var(--r);background:var(--panel);text-align:left;
+  transition:border-color .14s,background .14s,transform .14s}
+.opt:hover{border-color:var(--clarify);background:color-mix(in srgb,var(--clarify) var(--tint),var(--panel));
+  transform:translateX(2px)}
+.opt .lead{font-weight:600;font-size:13px}
+.opt .tail{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink3)}
+
+/* ---- live generation surface: what the model is doing, while it does it ---- */
+.gen{border:1px solid var(--rule);border-radius:var(--r);background:var(--panel);margin-top:9px;
+  overflow:hidden;animation:cardIn .28s cubic-bezier(.2,.8,.25,1) both}
+.gen.closing{animation:genOut .3s ease-in both}
+@keyframes genOut{to{opacity:0;transform:translateY(-6px)}}
+.gen-bar{position:relative;display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--sunk);
+  border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink3);overflow:hidden}
+.gen-bar .model{margin-left:auto;color:var(--ink2);text-transform:none;letter-spacing:.03em;font-size:10px}
+.gen-bar::after{content:"";position:absolute;left:-40%;top:0;bottom:0;width:40%;
+  background:linear-gradient(90deg,transparent,var(--sweep),transparent);animation:sweep 1.5s linear infinite}
+.gen.settled .gen-bar::after{display:none}
+@keyframes sweep{to{left:110%}}
+.gen-body{padding:11px 13px}
+
+.retr-row{display:grid;grid-template-columns:118px 1fr 40px;align-items:center;gap:11px;height:23px;
+  font-family:var(--mono);font-size:11px;color:var(--ink2);animation:fade .26s ease-out both}
+.retr-row .nm{color:var(--ink)}
+.retr-bar{height:4px;background:var(--rule);border-radius:2px;overflow:hidden}
+.retr-bar i{display:block;height:100%;width:0;background:var(--s1);border-radius:2px;
+  transition:width .5s cubic-bezier(.22,.9,.28,1)}
+.retr-row .sc{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink3)}
+.retr-row.out{opacity:.42}
+.retr-row.out .retr-bar i{background:var(--rule2)}
+.retr-cut{font-family:var(--mono);font-size:10px;color:var(--ink3);padding:5px 0 2px;
+  border-top:1px dashed var(--rule);margin-top:6px}
+
+.gsql{margin:0;font-family:var(--mono);font-size:11.5px;line-height:1.65;white-space:pre-wrap;
+  word-break:break-word;color:var(--ink);min-height:19px}
+.gsql .k{color:var(--s1);font-weight:500}
+.gsql .s{color:var(--s3)}
+.gsql .f{color:var(--s2)}
+.caret{display:inline-block;width:7px;height:13px;background:var(--s1);vertical-align:-2px;
+  margin-left:1px;animation:blink .82s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+
+.confrow{display:flex;align-items:center;gap:11px;font-family:var(--mono);font-size:11px;color:var(--ink2)}
+.confmeter{flex:1 1 auto;height:5px;background:var(--rule);border-radius:3px;overflow:hidden;position:relative}
+.confmeter i{display:block;height:100%;width:0;background:var(--verified);border-radius:3px;
+  transition:width .7s cubic-bezier(.22,.9,.28,1)}
+.confmeter.low i{background:var(--caution)}
+.confmeter::after{content:"";position:absolute;left:55%;top:-3px;bottom:-3px;width:1px;background:var(--ink3)}
+.confval{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:500;min-width:34px;text-align:right}
+.confnote{font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:6px}
+
+.tokcaret{display:inline-block;width:6px;height:12px;background:var(--ink3);vertical-align:-1px;
+  animation:blink .82s step-end infinite}
+
+/* composer */
+.composer{position:relative;z-index:3;flex:0 0 auto;border-top:1px solid var(--rule);
+  background:var(--panel);padding:13px 22px 15px;box-shadow:var(--lift-up)}
+.composer-in{max-width:880px;margin:0 auto}
+.cbox{border:1px solid var(--rule2);border-radius:var(--r);background:var(--panel);padding:10px 12px;
+  transition:border-color .14s,box-shadow .14s}
+.cbox:focus-within{border-color:var(--focus-edge);box-shadow:0 0 0 3px var(--ring)}
+.cfield{width:100%;border:0;background:none;font:inherit;font-size:14px;color:var(--ink);resize:none;
+  outline:none;min-height:21px;line-height:1.5}
+.cfield::placeholder{color:var(--ink3)}
+.crow{display:flex;align-items:center;gap:8px;margin-top:9px}
+.crow .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.chint{display:flex;gap:12px;margin-top:8px;font-size:11px;color:var(--ink3);flex-wrap:wrap}
+kbd{font-family:var(--mono);font-size:10px;border:1px solid var(--rule2);border-radius:2px;padding:1px 4px;
+  background:var(--sunk);color:var(--ink2)}
+.caret{display:inline-block;width:1px;height:14px;background:var(--ink);vertical-align:-2px;
+  animation:blink .9s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* probes */
+.probes{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px}
+.probe{text-align:left;padding:11px 13px;border:1px solid var(--rule);border-radius:var(--r);
+  background:var(--panel);transition:border-color .12s,background .12s,transform .12s}
+.probe:hover{border-color:var(--ink2);background:var(--sunk);transform:translateY(-1px)}
+.probe .tag{font-family:var(--mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink3);display:block;margin-bottom:4px}
+.probe .txt{font-size:13px;font-weight:500}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:20px}
+.tile{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);padding:13px 14px;
+  animation:fade .35s ease-out both}
+.tile .v{font-family:var(--mono);font-size:24px;font-weight:500;line-height:1.15;
+  font-variant-numeric:tabular-nums}
+.tile .l{font-size:11.5px;color:var(--ink2);margin-top:3px}
+.tile .f{font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:5px}
+.tile.flag .v{color:var(--awaiting)}
+.rows{display:flex;flex-direction:column;gap:9px;margin-bottom:20px}
+.row-card{display:flex;align-items:center;gap:13px;padding:12px 14px;background:var(--panel);
+  border:1px solid var(--rule);border-radius:var(--r);animation:fade .35s ease-out both}
+.row-card .main{min-width:0}
+.row-card .t{font-size:13.5px;font-weight:600}
+.row-card .s{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-top:2px}
+.row-card .end{margin-left:auto;display:flex;gap:8px;align-items:center;flex:0 0 auto}
+
+/* progress */
+.prog{height:4px;background:var(--rule);border-radius:2px;overflow:hidden;margin:12px 0 8px}
+.prog i{display:block;height:100%;width:0;background:var(--ink);border-radius:2px;
+  transition:width .28s linear}
+.prog-lab{font-family:var(--mono);font-size:11px;color:var(--ink2);
+  display:flex;justify-content:space-between}
+
+/* merge */
+.merge{border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;background:var(--panel);
+  animation:fade .35s ease-out both}
+.merge-head{display:flex;align-items:center;gap:10px;padding:9px 13px;
+  background:color-mix(in srgb,var(--awaiting) var(--tint),var(--sunk));border-bottom:1px solid var(--rule);
+  font-family:var(--mono);font-size:11px;color:var(--ink2);flex-wrap:wrap}
+.merge-head .whom{margin-left:auto;color:var(--ink3)}
+.merge.stale .merge-head{background:color-mix(in srgb,var(--awaiting) var(--tint2),var(--sunk))}
+.merge-cols{display:grid}
+.merge-cols.two{grid-template-columns:1fr 1fr}
+.merge-cols.three{grid-template-columns:1fr 1fr 1fr}
+.mcol{padding:12px 14px;border-right:1px solid var(--rule)}
+.mcol:last-child{border-right:0}
+.mcol .h{margin-bottom:9px}
+.kv{display:flex;gap:9px;font-family:var(--mono);font-size:11.5px;line-height:1.9}
+.kv .k{color:var(--ink3);min-width:76px}
+.kv .v{color:var(--ink)}
+.kv .v.hi{background:color-mix(in srgb,var(--caution) var(--tint2),transparent);padding:0 3px;border-radius:2px}
+.kv .v.em{color:var(--ink3)}
+.merge-foot{display:flex;align-items:center;gap:10px;padding:10px 13px;border-top:1px solid var(--rule);
+  background:var(--sunk);flex-wrap:wrap}
+.merge-foot .note{font-family:var(--mono);font-size:11px;color:var(--ink2)}
+.merge-foot .acts{margin-left:auto;display:flex;gap:7px}
+.grid-tbl th:first-child,.grid-tbl td:first-child{position:sticky;left:0;background:var(--panel)}
+.grid-tbl th:first-child{background:var(--sunk)}
+tr.arrived td{animation:arrive .55s ease-out}
+@keyframes arrive{from{background:color-mix(in srgb,var(--verified) var(--tint2),var(--panel))}}
+
+/* ================= TOUR BAR ================= */
+.tour{position:fixed;left:0;right:0;bottom:0;height:var(--tour-h);background:var(--bar-bg);
+  color:var(--bar-ink);border-top:1px solid var(--rule);
+  display:flex;align-items:center;gap:14px;padding:0 18px;z-index:50}
+.tour .count{font-family:var(--mono);font-size:11px;background:var(--bar-hover);
+  border-radius:2px;padding:4px 8px;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.tour .what{min-width:0;flex:1 1 auto}
+.tour .what .t{font-size:13.5px;font-weight:600;line-height:1.3;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tour .what .d{font-size:11.5px;opacity:.62;line-height:1.3;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tour .acts{display:flex;gap:7px;flex:0 0 auto;align-items:center}
+.tbtn{border:1px solid var(--bar-line);border-radius:var(--r);padding:6px 13px;font-size:12.5px;
+  color:var(--bar-ink);transition:background .12s,border-color .12s}
+.tbtn:hover{background:var(--bar-hover)}
+.tbtn.go{background:var(--bar-go);color:var(--bar-go-ink);border-color:var(--bar-go);font-weight:600}
+.tbtn.go:hover{background:var(--bar-go-hover)}
+.tbtn:disabled{opacity:.35;cursor:not-allowed}
+.tour .track{position:absolute;left:0;right:0;top:0;height:2px;background:var(--bar-line)}
+.tour .track i{display:block;height:100%;background:var(--bar-go);width:0;transition:width .4s ease-out}
+.tour.busy .tbtn.go{opacity:.5;pointer-events:none}
+.tour .what .t.swap{animation:fade .3s ease-out}
+
+/* step list sheet */
+.sheet{position:fixed;right:14px;bottom:calc(var(--tour-h) + 12px);width:352px;max-height:64vh;
+  background:var(--panel);border:1px solid var(--rule2);border-radius:var(--r);z-index:55;
+  display:flex;flex-direction:column;overflow:hidden;transform-origin:bottom right;
+  animation:sheetIn .22s cubic-bezier(.2,.9,.3,1) both}
+@keyframes sheetIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
+.sheet-head{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--rule);
+  flex:0 0 auto}
+.sheet-head h3{font-size:13px;font-weight:600;margin:0}
+.sheet-body{overflow-y:auto;padding:5px 0 10px}
+.dstep{display:flex;gap:10px;width:100%;text-align:left;padding:8px 14px;font-size:12.5px;
+  line-height:1.4;color:var(--ink2);border-left:2px solid transparent}
+.dstep:hover{background:var(--sunk)}
+.dstep.done{color:var(--ink3)}
+.dstep.done .dn{background:var(--verified);color:var(--paper);border-color:var(--verified)}
+.dstep.here{background:var(--sunk);border-left-color:var(--ink);color:var(--ink);font-weight:500}
+.dn{font-family:var(--mono);font-size:9.5px;width:18px;height:18px;flex:0 0 auto;border-radius:2px;
+  border:1px solid var(--rule2);display:grid;place-items:center;color:var(--ink3);margin-top:1px}
+.dsec{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink3);padding:12px 14px 4px}
+
+.toast{position:fixed;left:50%;bottom:calc(var(--tour-h) + 18px);transform:translate(-50%,14px);
+  opacity:0;pointer-events:none;background:var(--bar-bg);color:var(--bar-ink);border-radius:var(--r);
+  padding:10px 15px;font-size:12.5px;transition:opacity .22s,transform .22s;z-index:60;
+  max-width:min(560px,92vw);border:1px solid var(--rule2);box-shadow:var(--lift);line-height:1.45}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.fade{animation:fade .32s ease-out both}
+@keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important}
+  .scroll{scroll-behavior:auto}
+}
+@media (max-width:1180px){:root{--nav-w:212px}}
+@media (max-width:1080px){
+  #authRoot{grid-template-columns:1fr;overflow-y:auto}
+  .stage-pane{display:none}
+  .auth-pane{padding:26px 22px}
+}
+@media (max-height:880px){
+  .amb-lede h3{font-size:18px;margin:5px 0 5px}
+  .amb-lede p{font-size:12px}
+  .amb-lede{margin-bottom:13px}
+  .amb-body{min-height:470px}
+  .stage-pane{padding:22px 34px}
+}
+@media (max-height:780px){
+  .amb-lede p{display:none}
+  .amb-lede{margin-bottom:10px}
+  .amb-body{min-height:404px;gap:9px}
+  .amb-claims{margin-top:11px}
+  .stage-pane{padding:16px 30px}
+}
+@media (max-width:900px){
+  #appRoot{grid-template-columns:1fr}
+  .nav{display:none}
+  .tiles{grid-template-columns:1fr 1fr}
+  .probes{grid-template-columns:1fr}
+  .merge-cols.two,.merge-cols.three{grid-template-columns:1fr}
+  .mcol{border-right:0;border-bottom:1px solid var(--rule)}
+  .floor-note{display:flex!important}
+  .tour .what .d{display:none}
+  .sheet{left:14px;right:14px;width:auto}
+}
+.floor-note{display:none;margin-bottom:16px}
+</style>
+
+<!-- ==================== AUTH ==================== -->
+<div id="authRoot">
+ <div class="auth-pane">
+  <div class="auth">
+    <div class="auth-mark"><span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Speak<span>QL</span></span></div>
+
+    <!-- 1: email -->
+    <section class="astep on" id="a1">
+      <h2>Ask your warehouse a question in plain English.</h2>
+      <p class="lede">Sign in with your email — a work address joins your company, a personal one gets a
+        workspace of its own. There is no password anywhere in this product; we send a six-digit code
+        instead.</p>
+      <input class="field" id="email" placeholder="you@company.com" autocomplete="off" spellcheck="false">
+      <div class="hint" id="hint"><span class="dot"></span>
+        <span>Your email domain decides which company you join, so a personal address will not work.</span></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn primary" id="emailGo" disabled>Continue</button>
+      </div>
+      <div class="tryrow">
+        <button class="try" data-fill="priya@trellisfoods.io">a brand-new domain</button>
+        <button class="try" data-fill="dhruv@northwind.co">a domain already here</button>
+        <button class="try" data-fill="priya@gmail.com">a gmail address</button>
+      </div>
+      <div class="primer">
+        <div class="eyebrow" style="margin-bottom:9px">Interactive mockup · SpeakQL minor project</div>
+        <p>Nothing exists yet — no organisation, no databases, no people. Everything you see from here is
+          something you did. The bar along the bottom walks all
+          <b><span id="stepTotal">32</span> steps</b> of the flow, or explore freely at your own pace.</p>
+        <div class="primer-legs" id="primerLegs"></div>
+      </div>
+    </section>
+
+    <!-- 2: the one question -->
+    <section class="astep" id="a2">
+      <h2>Nobody from <span class="mono" id="theDomain">trellisfoods.io</span> is here yet.</h2>
+      <p class="lede">So we ask once, and only once. Everyone who signs up from this domain after you
+        joins as a member, and is never shown this screen.</p>
+      <div class="choice">
+        <button id="pickOwner">
+          <div class="t">I am setting SpeakQL up for my company</div>
+          <div class="d">Creates the organisation and makes you its owner. You will be the only one.</div></button>
+        <button id="pickMember">
+          <div class="t">I was invited by a colleague</div>
+          <div class="d">Joins a team that is already here.</div></button>
+      </div>
+      <button class="btn" data-back="1">Back</button>
+    </section>
+
+    <!-- 2b: dead end -->
+    <section class="astep" id="a2b">
+      <h2>A dead end, by construction.</h2>
+      <p class="lede">There is no organisation to join. An invitation is issued <i>by</i> an organisation,
+        and nobody from this domain has registered one — so an invitation to it cannot exist.</p>
+      <div class="strip neutral" style="margin-bottom:18px">
+        <span>This is the honest end of the branch, not a greyed-out button. The interface does not
+        pretend the path could work and then fail you later.</span></div>
+      <button class="btn" data-back="2">Back to the question</button>
+    </section>
+
+    <!-- 3: code -->
+    <section class="astep" id="a3">
+      <h2>Check your email.</h2>
+      <p class="lede" id="codeWhy">Verifying this code creates the organisation and makes you its owner.</p>
+      <div class="code" id="codeBoxes">
+        <input class="mono" maxlength="1" inputmode="numeric" aria-label="Digit 1">
+        <input class="mono" maxlength="1" inputmode="numeric" aria-label="Digit 2">
+        <input class="mono" maxlength="1" inputmode="numeric" aria-label="Digit 3">
+        <input class="mono" maxlength="1" inputmode="numeric" aria-label="Digit 4">
+        <input class="mono" maxlength="1" inputmode="numeric" aria-label="Digit 5">
+        <input class="mono" maxlength="1" inputmode="numeric" aria-label="Digit 6">
+      </div>
+      <div class="hint"><span class="dot"></span>
+        <span>Six digits, valid for ten minutes. <span id="resend">Resend in 60s</span></span></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn primary" id="verifyGo" disabled>Continue</button>
+        <button class="btn" id="autofill">Autofill for the demo</button>
+        <button class="btn" data-back="1">Use a different email</button>
+      </div>
+    </section>
+
+    <!-- 4: verifying -->
+    <section class="astep" id="a4">
+      <div class="verify">
+        <div id="vSpin"><div class="ring"></div></div>
+        <div class="vlines" id="vLines"></div>
+      </div>
+    </section>
+  </div>
+ </div>
+
+ <!-- The right half of the door: the machine, running by itself. Decorative
+      in the accessibility sense -- everything it says is said again inside
+      the product -- but not decorative in the design sense. It is the twelve
+      steps of 6.1, at a third of the size, on a loop. -->
+ <aside class="stage-pane" id="stagePane" aria-hidden="true">
+   <div class="amb-grid"></div>
+   <div class="amb-glow" id="ambGlow"></div>
+   <div class="amb-inner">
+     <div class="amb-lede">
+       <div class="eyebrow">The pipeline, running</div>
+       <h3>Watch it think.</h3>
+       <p>A question becomes retrieval, then SQL, then four checks, then a number — and the
+          console names every step while it happens. This is not a video. It is the same
+          interface you are about to sign in to.</p>
+     </div>
+
+     <div class="amb-card" id="ambCard">
+       <div class="amb-bar">
+         <span class="amb-dot" id="ambDot"></span>
+         <span id="ambStage">waiting for a question</span>
+         <span class="amb-model" id="ambModel">gemma3:4b · local</span>
+       </div>
+       <div class="amb-body">
+         <div class="amb-q"><span class="amb-qi">›</span><span id="ambQ"></span><i class="amb-cur" id="ambQCur"></i></div>
+
+         <div class="amb-sec" id="ambRetr" hidden>
+           <div class="amb-lab">Retrieval · MiniLM → FAISS</div>
+           <div id="ambRetrRows"></div>
+         </div>
+
+         <div class="amb-sec" id="ambGen" hidden>
+           <div class="amb-lab">Generation</div>
+           <pre class="amb-sql" id="ambSql"></pre>
+         </div>
+
+         <!-- confidence is read BEFORE validation, because it chooses the
+              generator; it never decides whether the SQL is allowed to run. -->
+         <div class="amb-sec" id="ambConf" hidden>
+           <div class="amb-confrow">
+             <span>confidence</span>
+             <span class="amb-meter" id="ambMeter"><i></i></span>
+             <span class="amb-confval" id="ambConfVal">0.00</span>
+           </div>
+           <div class="amb-confnote" id="ambConfNote"></div>
+         </div>
+
+         <div class="amb-sec" id="ambVal" hidden>
+           <div class="amb-lab">Validation · sqlglot AST</div>
+           <div id="ambLayers"></div>
+         </div>
+
+         <div class="amb-sec amb-out" id="ambOut" hidden></div>
+       </div>
+     </div>
+
+     <div class="amb-claims">
+       <span><i class="verified"></i>Read-only, always</span>
+       <span><i class="clarify"></i>A parser decides, never the model</span>
+       <span><i class="pending"></i>The SQL is shown every time</span>
+     </div>
+   </div>
+ </aside>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div id="appRoot" hidden>
+  <aside class="nav">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Speak<span>QL</span></span></div>
+    <div class="org">
+      <span class="avatar" id="orgAv">NG</span>
+      <div><div class="org-name" id="orgName">Northwind Group</div>
+        <div class="org-sub" id="orgSub">3 databases · 6 people</div></div>
+    </div>
+    <div class="nav-scroll">
+      <div id="ownerNav">
+        <div class="nav-head">Your organisation</div>
+        <button class="nav-item" data-screen="org"><span class="ic">◇</span><span id="navOrgName">Northwind Group</span>
+          <span class="nav-count" id="navOrgCount" hidden></span></button>
+        <button class="nav-item" data-screen="databases"><span class="ic">▤</span>Databases</button>
+        <button class="nav-item" data-screen="people" id="navPeople"><span class="ic">◎</span>People and access</button>
+        <div class="nav-head" id="navQualityHead">Data quality</div>
+        <button class="nav-item" data-screen="merges" id="navMerges"><span class="ic">⑂</span>Merge requests
+          <span class="badge" id="mergeBadge">0</span></button>
+        <div class="nav-head">Use the product</div>
+      </div>
+      <button class="nav-item" data-screen="ask" aria-current="true"><span class="ic">○</span>Ask</button>
+      <div id="memberNav" hidden>
+        <button class="nav-item" data-screen="fill"><span class="ic">✎</span>Fill a gap</button>
+        <button class="nav-item" data-screen="activity"><span class="ic">◷</span>Your activity</button>
+        <button class="nav-item" data-screen="reach"><span class="ic">▦</span>What you can reach</button>
+      </div>
+      <div class="nav-head">Databases <span id="dbCount">0</span></div>
+      <div id="dbList"></div>
+      <div class="nav-head">Recent threads</div>
+      <div id="threadList"><button class="thread" style="color:var(--ink3)">Nothing yet</button></div>
+    </div>
+    <div class="engine" id="engine">
+      <div class="eng-top"><span class="eng-dot"></span><span class="eng-lab">Engine</span>
+        <span class="eng-state" id="engState">idle</span></div>
+      <div class="eng-model mono" id="engModel">gemma3:4b</div>
+      <div class="eng-sub">local · ollama</div>
+      <div class="eng-sub">never decides safety</div>
+    </div>
+    <div class="navfoot">
+      <div class="who">
+        <span class="avatar" id="whoAv">GB</span>
+        <div><div class="who-name" id="whoName">Garv Bhargava</div>
+          <div class="who-role" id="whoRole">owner</div></div>
+        <button class="signout" id="signout" title="Sign out" aria-label="Sign out">⏻</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="stage">
+    <header class="topbar">
+      <h1 id="barTitle">Ask</h1>
+      <span class="ctx mono" id="barCtx">northwind_sales</span>
+      <div class="right" id="topRight">
+        <span class="mode-label">Mode</span>
+        <div class="seg" style="width:184px" role="group" aria-label="Reading mode">
+          <button id="beAnalyst" aria-pressed="true">Workbench</button>
+          <button id="beSimple" aria-pressed="false">Readout</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="scroll" id="scroll">
+      <div class="wrap">
+        <div class="strip neutral floor-note">
+          <span>This console is desktop-first. Below 900px the navigator collapses and the administrative
+          screens state their minimum width — Frontend Specification §20.4.</span></div>
+
+        <section class="screen on" id="screen-ask">
+          <div id="probes" class="probes"></div>
+          <div id="feed"></div>
+        </section>
+
+        <section class="screen" id="screen-org">
+          <h2 class="title" id="orgTitle">Northwind Group</h2>
+          <p class="sub">What needs your attention. Every figure here is drawn from
+            <code class="mono">query_log</code>, which gets one row on every path — answers, refusals and
+            rejections alike.</p>
+          <div class="tiles" id="orgTiles"></div>
+          <div class="strip awaiting" style="margin-bottom:20px" id="digestStrip">
+            <span><b>Merge requests are emailed to you as a digest.</b> One email per ten minutes, not one
+            per row, and a reminder every morning while anything is still waiting — so a member's
+            correction does not sit for a week because you forgot.</span></div>
+          <div id="mostAsked">
+          <h3 class="sec">Most asked, last 30 days</h3>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Question</th><th>Asked</th><th>Clarified</th><th>Served locally</th></tr></thead>
+            <tbody>
+              <tr><td>Regional sales by quarter</td><td class="num">48</td><td class="num">2%</td><td class="num">96%</td></tr>
+              <tr><td>Which was our best month?</td><td class="num">31</td><td class="num">88%</td><td class="num">61%</td></tr>
+              <tr><td>Shipment gaps by week</td><td class="num">27</td><td class="num">0%</td><td class="num">93%</td></tr>
+              <tr><td>Customer churn this quarter</td><td class="num">19</td><td class="num">—</td><td class="num">refused</td></tr>
+            </tbody></table></div>
+          <div class="strip neutral"><span><b>"Best month" needing a clarification 88% of the time is a
+            fact about the question, not a failure.</b> Three readings of "best" give three different
+            months. The table doubles as a diagnostic.</span></div>
+          </div>
+          <div class="strip neutral" id="noAsked"><span><b>Nothing has been asked yet.</b> This is where
+            the most-asked questions and their clarification rates appear, drawn from
+            <code>query_log</code>. It stays empty until somebody asks something, because a dashboard
+            that invents its first numbers is not worth reading later.</span></div>
+        </section>
+
+        <section class="screen" id="screen-databases">
+          <h2 class="title">Databases</h2>
+          <p class="sub">An uploaded file states where it should live. Guessing produced a sprawl of
+            single-table databases nobody could join across.</p>
+          <div class="rows" id="dbRows"></div>
+
+          <h3 class="sec">Register an external database</h3>
+          <div class="card" style="padding:16px 18px;margin-bottom:22px">
+            <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px">
+              <input class="field" id="connHost" style="max-width:250px" value="warehouse.northwind.co">
+              <input class="field" id="connDb" style="max-width:180px" value="northwind_sales">
+            </div>
+            <div class="layers" id="connChecks">
+              <div class="layer pend"><span class="g">○</span>Host resolves, and not into a private range
+                <span class="what">the resolved address is checked, not the string</span></div>
+              <div class="layer pend"><span class="g">○</span>TLS negotiated
+                <span class="what">sslmode=require, never downgraded</span></div>
+              <div class="layer pend"><span class="g">○</span>Test query succeeds
+                <span class="what">SELECT 1, five-second timeout</span></div>
+              <div class="layer pend"><span class="g">○</span>Account holds no write privilege
+                <span class="what">re-verified at every boot</span></div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn primary" id="doConnect">Run the checks and connect</button>
+              <button class="btn" id="tryPrivate">Try 10.0.4.11 instead</button>
+            </div>
+            <div id="connResult"></div>
+          </div>
+
+          <h3 class="sec">Upload a file</h3>
+          <div class="card" style="padding:16px 18px">
+            <div class="strip neutral" style="margin-bottom:14px">
+              <span><b class="mono" id="fileName">q3-shipments.csv</b> — read, 4 columns, 14,208 rows.
+              Nothing has been loaded yet.</span></div>
+            <div class="eyebrow" style="margin-bottom:9px">Where should this live?</div>
+            <div class="seg" style="max-width:440px;margin-bottom:12px">
+              <button id="destNew" aria-pressed="true">A new database</button>
+              <button id="destExisting" aria-pressed="false">A table in an existing one</button>
+            </div>
+            <div id="destFields" style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px"></div>
+            <div class="strip verified" style="margin-bottom:14px">
+              <span>Will create <b class="mono" id="destPreview">q3_shipments.q3_shipments</b><span id="destWhy"></span></span></div>
+            <button class="btn primary" id="doUpload">Load 14,208 rows</button>
+            <div id="uploadResult"></div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-people">
+          <h2 class="title">People and access</h2>
+          <p class="sub">A row per person, a column per database, and a chip saying which role they hold on
+            each. The two axes are separate facts — somebody can be an analyst on one database and a viewer
+            on another.</p>
+          <div class="strip blocked" id="personalNote" hidden style="margin-bottom:18px">
+            <span><b>Nobody can join this workspace by email domain.</b> It has no domain — that is what a
+            personal workspace is. Somebody else signing up with a gmail.com address gets their own separate
+            workspace and cannot see this one. The only way in is an invitation you send by name.</span></div>
+          <div id="pendingWrap"></div>
+          <div class="tbl-wrap"><table class="grid-tbl">
+            <thead><tr><th>Person</th><th>Product role</th><th>northwind_sales</th>
+              <th>support_analytics</th><th>q3_shipments</th></tr></thead>
+            <tbody id="peopleBody"></tbody></table></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+            <button class="btn primary" id="inviteBtn">Invite dhruv@northwind.co</button>
+          </div>
+          <div id="inviteResult"></div>
+          <div class="strip neutral"><span><b>The rule this grid cannot show:</b> a viewer never sees
+            generated SQL, and the SQL is removed by the server — not hidden by this screen.</span></div>
+        </section>
+
+        <section class="screen" id="screen-merges">
+          <h2 class="title">Merge requests</h2>
+          <p class="sub">When a member fills in missing data, the change lands in their own copy — not in the
+            real database. It waits here for you. Your own edits never appear on this screen, because they
+            were saved the moment you made them.</p>
+          <div id="mergeList" style="display:flex;flex-direction:column;gap:14px"></div>
+          <div id="mergeEmpty" class="strip verified">
+            <span><b>Nothing waiting.</b> A queue should be visibly empty when it is.</span></div>
+        </section>
+
+        <section class="screen" id="screen-fill">
+          <h2 class="title">Fill a gap</h2>
+          <p class="sub">For a correction not prompted by an answer. The same validator runs, with the same
+            three checks — the only difference is where the write lands.</p>
+          <div class="card" style="padding:16px 18px;margin-bottom:16px">
+            <div style="display:grid;grid-template-columns:1fr 250px;gap:20px">
+              <div>
+                <div class="eyebrow" style="margin-bottom:9px">The change</div>
+                <div class="kv"><span class="k">table</span><span class="v mono">shipments</span></div>
+                <div class="kv"><span class="k">shipment_id</span><span class="v mono">84117</span></div>
+                <div class="kv"><span class="k">column</span><span class="v mono">units</span></div>
+                <div class="kv"><span class="k">before</span><span class="v em mono">empty</span></div>
+                <div class="kv"><span class="k">after</span><span class="v mono hi">203</span></div>
+                <div class="kv"><span class="k">note</span><span class="v">back-filled from the manifest</span></div>
+              </div>
+              <div>
+                <div class="eyebrow" style="margin-bottom:9px">Edit validator</div>
+                <div class="layers">
+                  <div class="layer"><span class="g">✓</span>On the editable list</div>
+                  <div class="layer"><span class="g">✓</span>Scoped by primary key</div>
+                  <div class="layer"><span class="g">✓</span>Exactly one row</div>
+                  <div class="layer"><span class="g">✓</span>Analyst grant held</div>
+                </div></div></div>
+          </div>
+          <div class="strip blocked" style="margin-bottom:16px">
+            <span><b>What would be refused, and why.</b> A table with no primary key — a change that cannot
+            be pinned to one row cannot be checked. An update matching more than one row — the transaction
+            rolls back. A correction by a viewer — 403, at the grant.</span></div>
+          <button class="btn primary" id="sendForApproval">Send for approval</button>
+          <div id="fillResult"></div>
+        </section>
+
+        <section class="screen" id="screen-activity">
+          <h2 class="title">Your activity</h2>
+          <p class="sub">Your own questions only. Every outcome type appears with its own chip, so a blocked
+            question and a refused one are visibly different things — and both were recorded.</p>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Question</th><th>Outcome</th><th>Route</th><th>When</th></tr></thead>
+            <tbody id="activityBody"></tbody></table></div>
+          <div class="strip neutral"><span><b>A failed request still occupies its turn.</b> It is not
+            silently removed, because a person scrolling back should see that they asked and did not get an
+            answer.</span></div>
+        </section>
+
+        <section class="screen" id="screen-reach">
+          <h2 class="title">What you can reach</h2>
+          <p class="sub">Two things decide what you see: which databases you were granted, and what role you
+            hold on each. They are separate facts.</p>
+          <div class="rows">
+            <div class="row-card"><div class="main"><div class="t">northwind_sales</div>
+              <div class="s">every table · you see generated SQL · you may correct values</div></div>
+              <div class="end"><span class="chip solid">Analyst</span></div></div>
+            <div class="row-card"><div class="main"><div class="t">support_analytics</div>
+              <div class="s">public tables only · SQL is withheld · corrections are not available</div></div>
+              <div class="end"><span class="chip">Viewer</span></div></div>
+          </div>
+          <div class="strip neutral"><span><b>Access is granted by your owner, Garv Bhargava.</b> You cannot
+            grant it to yourself, and nobody in any other company can reach these databases at all.</span></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="composer" id="composer">
+      <div class="composer-in">
+        <div class="cbox">
+          <textarea class="cfield" id="q" rows="1" placeholder="Ask about sales, customers, shipments…"></textarea>
+          <div class="crow">
+            <button class="icon-btn" id="micBtn" title="Ask by voice" aria-label="Ask by voice">◉</button>
+            <span class="chip mono" id="ctxChip">northwind_sales · workbench</span>
+            <div class="right"><button class="btn primary" id="askBtn">Ask</button></div>
+          </div>
+        </div>
+        <div class="chint">
+          <span><kbd>Enter</kbd> to ask · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+          <span style="margin-left:auto" class="mono">Answers are logged for accuracy measurement</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TOUR ==================== -->
+<div class="tour" id="tour">
+  <div class="track"><i id="tourTrack"></i></div>
+  <span class="count" id="tourCount">1 / 26</span>
+  <div class="what"><div class="t" id="tourTitle">Start at the front door</div>
+    <div class="d" id="tourDesc">Nobody has signed in yet. This is the only screen in the product.</div></div>
+  <div class="acts">
+    <button class="theme-tog" id="themeTog" title="Switch theme" aria-label="Switch theme">
+      <span class="tt-ic" id="ttIc">☾</span><span class="tt-lab" id="ttLab">Dark</span></button>
+    <button class="tbtn" id="tourList">All steps</button>
+    <button class="tbtn" id="tourBack" disabled>Back</button>
+    <button class="tbtn go" id="tourGo">Run this step</button>
+    <button class="tbtn" id="tourReset" title="Start over">↺</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var RM=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+var NL=String.fromCharCode(10);
+var wait=function(ms){return new Promise(function(r){setTimeout(r,RM?Math.min(ms,40):ms)})};
+
+/* ================= state ================= */
+var S={
+  role:null, persona:"workbench", org:null, turns:0, filled:0, demoIdx:0,
+  dbs:[], people:[], threads:[], activity:[], merges:[], pendingSignup:false, invited:false
+};
+
+/* ================= toast ================= */
+var tT;
+function toast(m){ var t=$("#toast"); t.textContent=m; t.classList.add("on");
+  clearTimeout(tT); tT=setTimeout(function(){t.classList.remove("on")},4200) }
+
+/* ================= AUTH ================= */
+var FREE=/@(gmail|yahoo|outlook|hotmail|icloud|proton)\./i;
+var authPath="owner";
+function astep(id){
+  $$(".astep").forEach(function(s){ s.classList.remove("on") });
+  $("#"+id).classList.add("on");
+}
+function hintState(){
+  var v=$("#email").value.trim(), h=$("#hint"), go=$("#emailGo"), sp=h.lastElementChild;
+  h.className="hint"; go.disabled=true;
+  if(!v){ sp.textContent="A work address joins your company. A personal one gets a workspace of its own."; return }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(v)){ sp.textContent="That is not an email address yet."; return }
+  var d=v.split("@")[1].toLowerCase();
+  if(FREE.test(v)){
+    h.className="hint ok"; go.disabled=false;
+    sp.textContent=d+" is not a company, so this becomes your own personal workspace — just you. "+
+      "Nobody can join it by email domain, because it has no domain to match.";
+    return;
+  }
+  if(S.org && S.org.kind==="company" && d===S.org.domain){ h.className="hint ok";
+    sp.textContent=S.org.name+" is already here. You will join as a member, and no question will be asked."; }
+  else { h.className="hint new";
+    sp.textContent="No one from "+d+" is here yet, so we will ask you one question next."; }
+  go.disabled=false;
+}
+$("#email").addEventListener("input",hintState);
+$$("[data-fill]").forEach(function(b){ b.addEventListener("click",function(){
+  $("#email").value=b.dataset.fill; hintState(); $("#email").focus() }) });
+$$("[data-back]").forEach(function(b){ b.addEventListener("click",function(){
+  astep(b.dataset.back==="1"?"a1":"a2") }) });
+
+$("#emailGo").addEventListener("click",function(){
+  var v=$("#email").value.trim(), d=v.split("@")[1].toLowerCase();
+  if(FREE.test(v)){
+    authPath="personal"; personalEmail=v;
+    $("#codeWhy").innerHTML='Verifying this code creates a <b>personal workspace</b> — an organisation with '+
+      'exactly one person in it, and no domain at all. Nobody is asked whether they are the owner, because '+
+      'there is nobody else to be.';
+    astep("a3"); startResend(); focusCode(); return;
+  }
+  if(S.org && S.org.kind==="company" && d===S.org.domain){
+    authPath="member";
+    $("#codeWhy").innerHTML='You were not asked whether you are the owner, because that question was '+
+      'answered once — when <b>'+S.org.name+'</b> registered this domain. You are joining as a member.';
+    astep("a3"); startResend(); focusCode();
+  } else { $("#theDomain").textContent=d; astep("a2") }
+});
+var personalEmail="";
+$("#pickOwner").addEventListener("click",function(){
+  authPath="owner";
+  $("#codeWhy").textContent="Verifying this code creates the organisation and makes you its owner. "+
+    "Nobody else from this domain will ever see the previous screen.";
+  astep("a3"); startResend(); focusCode();
+});
+$("#pickMember").addEventListener("click",function(){ astep("a2b") });
+
+var codeIn=$$("#codeBoxes input");
+function focusCode(){ setTimeout(function(){codeIn[0].focus()},260) }
+codeIn.forEach(function(inp,i){
+  inp.addEventListener("input",function(){
+    inp.value=inp.value.replace(/\D/g,"");
+    if(inp.value){ inp.classList.add("pop"); setTimeout(function(){inp.classList.remove("pop")},220);
+      if(i<5) codeIn[i+1].focus() }
+    $("#verifyGo").disabled=codeIn.some(function(x){return !x.value});
+  });
+  inp.addEventListener("keydown",function(e){
+    if(e.key==="Backspace"&&!inp.value&&i>0) codeIn[i-1].focus();
+    if(e.key==="Enter"&&!$("#verifyGo").disabled) $("#verifyGo").click();
+  });
+  inp.addEventListener("paste",function(e){
+    var d=(e.clipboardData||window.clipboardData).getData("text").replace(/\D/g,"").slice(0,6);
+    if(d.length===6){ e.preventDefault(); codeIn.forEach(function(x,j){x.value=d[j]});
+      $("#verifyGo").disabled=false; codeIn[5].focus() }
+  });
+});
+var resendT;
+function startResend(){
+  var n=60; clearInterval(resendT);
+  $("#resend").textContent="Resend in "+n+"s";
+  resendT=setInterval(function(){
+    n--; if(n<=0){ clearInterval(resendT); $("#resend").innerHTML='<b style="color:var(--ink)">Send a new code</b>' }
+    else $("#resend").textContent="Resend in "+n+"s";
+  },1000);
+}
+async function autofillCode(){
+  for(var i=0;i<6;i++){ codeIn[i].value="418902"[i];
+    codeIn[i].classList.add("pop"); codeIn[i].focus(); await wait(85);
+    codeIn[i].classList.remove("pop"); }
+  $("#verifyGo").disabled=false;
+}
+$("#autofill").addEventListener("click",autofillCode);
+
+async function doVerify(){
+  astep("a4");
+  var lines = authPath==="owner"
+    ? ["Verifying the code…","Creating the organisation…","Making you its owner…","Signing you in…"]
+    : authPath==="personal"
+    ? ["Verifying the code…","gmail.com is not a company — skipping the domain lookup…",
+       "Creating a personal workspace with no domain…","Signing you in…"]
+    : ["Verifying the code…","Resolving your domain…","Joining Northwind Group as a member…","Signing you in…"];
+  var box=$("#vLines"); box.innerHTML="";
+  for(var i=0;i<lines.length;i++){
+    box.innerHTML='<div>'+lines[i]+'</div>'; await wait(430);
+  }
+  $("#vSpin").innerHTML='<div class="tickmark">✓</div>';
+  box.innerHTML='<div><b>'+(authPath==="owner"?"Northwind Group created."
+    :authPath==="personal"?"Your workspace is ready.":"Welcome to Northwind Group.")+'</b></div>';
+  await wait(700);
+  enterApp(authPath);
+}
+$("#verifyGo").addEventListener("click",doVerify);
+
+/* ================= app entry ================= */
+function enterApp(as){
+  if(as==="owner" && !S.org){
+    // demo continuity: the company organisation reads as Northwind throughout
+    S.org={name:"Northwind Group",domain:"northwind.co",kind:"company"};
+    S.people=[{n:"Garv Bhargava",r:"owner",g:{}}];
+  }
+  if(as==="personal"){
+    S.org={name:personalEmail||"you@gmail.com",domain:null,kind:"personal"};
+    S.people=[{n:personalEmail||"you@gmail.com",r:"owner",g:{}}];
+    S.dbs=[]; S.threads=[]; S.activity=[]; S.merges=[];
+    S.pendingSignup=false; S.invited=false;
+    as="owner"; // a personal workspace has exactly one person, and they own it
+  }
+  S.role=as;
+  $("#authRoot").hidden=true;
+  $("#appRoot").hidden=false;
+  $("#appRoot").classList.remove("boot"); void $("#appRoot").offsetWidth;
+  $("#appRoot").classList.add("boot");
+  paintShell();
+  show(as==="owner"?"org":"ask");
+  if(as==="member" && !S.turns) drawProbes();
+}
+function signOut(){
+  $("#appRoot").hidden=true; $("#authRoot").hidden=false;
+  astep("a1"); $("#email").value=""; hintState();
+  codeIn.forEach(function(x){x.value=""}); $("#verifyGo").disabled=true;
+  $("#vSpin").innerHTML='<div class="ring"></div>';
+  resetFeed();
+  toast("Signed out. The organisation and everything in it is still there — sign in again to see it.");
+}
+$("#signout").addEventListener("click",signOut);
+
+/* ================= shell paint ================= */
+/* Two letters from whatever we have: a person's name gives their initials, an
+   email address gives the front of its local part. Never a bare dot. */
+function initials(s){
+  s=String(s||"").trim();
+  if(s.indexOf("@")>0){
+    var local=s.split("@")[0].replace(/[^A-Za-z]/g,"");
+    if(local) return local.slice(0,2).toUpperCase();
+  }
+  var parts=s.split(/\s+/).filter(Boolean);
+  if(parts.length>1) return (parts[0][0]+parts[1][0]).toUpperCase();
+  return (s.replace(/[^A-Za-z0-9]/g,"").slice(0,2)||"?").toUpperCase();
+}
+function paintShell(){
+  var owner=S.role==="owner", personal=S.org&&S.org.kind==="personal";
+  $("#ownerNav").hidden=!owner;
+  $("#memberNav").hidden=owner;
+  /* A personal workspace holds exactly one person, so there is nobody to grant
+     access to and no member who could raise a merge. Showing those two screens
+     would be offering administration of a team that cannot exist. */
+  $("#navPeople").hidden=!!personal;
+  $("#navQualityHead").hidden=!!personal;
+  $("#navMerges").hidden=!!personal;
+  var oname=S.org?S.org.name:"—";
+  $("#orgName").innerHTML='<span class="org-nm">'+esc(oname)+'</span>'+
+    (personal?'<span class="chip" style="height:16px;font-size:9px">Personal</span>':"");
+  $("#orgName").title=oname;
+  $("#orgAv").textContent=personal?initials(oname):"NG";
+  $("#navOrgName").textContent=personal?"Your workspace":(S.org?S.org.name:"—");
+  $("#orgTitle").textContent=personal?"Your workspace":(S.org?S.org.name:"—");
+  var wname=personal?S.org.name:(owner?"Garv Bhargava":"Dhruv Chhatrawal");
+  $("#whoName").textContent=wname;
+  $("#whoName").title=wname;
+  $("#whoAv").textContent=personal?initials(wname):(owner?"GB":"DC");
+  $("#whoRole").textContent=owner?"owner":"member";
+  /* The isolation note explains the workspace, and in a personal workspace the
+     People screen it used to live on is no longer reachable — so it moves onto
+     the workspace screen rather than being lost with the nav item. */
+  var pn=$("#personalNote");
+  if(personal){
+    if(pn.parentNode!==$("#screen-org")) $("#screen-org").insertBefore(pn,$("#orgTiles"));
+    pn.hidden=false;
+  } else {
+    if(pn.parentNode!==$("#screen-people")) $("#screen-people").insertBefore(pn,$("#pendingWrap"));
+    pn.hidden=true;
+  }
+  var visible=owner?S.dbs:S.dbs.filter(function(d){return d.member});
+  $("#dbCount").textContent=String(visible.length);
+  var dbWord=function(n){ return n+" database"+(n===1?"":"s") };
+  $("#orgSub").textContent = personal
+    ? dbWord(S.dbs.length)+" · just you"
+    : owner
+    ? dbWord(S.dbs.length)+" · "+S.people.length+" "+(S.people.length===1?"person":"people")
+    : dbWord(visible.length)+" granted";
+  /* in a personal workspace the database count is the only number that means
+     anything, so it rides on the workspace row itself */
+  $("#navOrgCount").hidden=!personal;
+  $("#navOrgCount").textContent=String(S.dbs.length);
+  /* a workspace of one cannot receive a merge, so the digest policy is not a
+     fact about it; and the most-asked table stays away until it has real rows */
+  $("#digestStrip").hidden=!!personal;
+  var asked=S.activity.length>0;
+  $("#mostAsked").hidden=!asked;
+  $("#noAsked").hidden=asked;
+  $("#dbList").innerHTML = visible.length ? visible.map(function(d,i){
+    var role=owner?"Analyst":(d.member||"Analyst");
+    return '<button class="db-item"'+(i===0?' aria-current="true"':'')+'>'+
+      '<span><span class="db-name">'+d.name+'</span><br><span class="db-sub">'+
+      (owner?d.sub:(role==="Viewer"?"public tables only":d.sub))+'</span></span>'+
+      '<span class="chip" style="margin-left:auto">'+role+'</span></button>';
+  }).join("") : '<button class="db-item" style="color:var(--ink3)"><span class="db-sub">None yet</span></button>';
+  $("#threadList").innerHTML = S.threads.length
+    ? S.threads.slice(0,4).map(function(t){return '<button class="thread">'+esc(t)+'</button>'}).join("")
+    : '<button class="thread" style="color:var(--ink3)">Nothing yet</button>';
+  paintDbRows(); paintPeople(); paintOrgTiles(); paintActivity(); renderMerges();
+}
+function paintOrgTiles(){
+  var open=S.merges.filter(function(m){return !m.done}).length;
+  var personal=S.org&&S.org.kind==="personal";
+  var dbTile='<div class="tile"><div class="v">'+S.dbs.length+'</div><div class="l">Databases</div>'+
+      '<div class="f">'+S.dbs.filter(function(d){return d.uploaded}).length+' uploaded</div></div>';
+  var localTile='<div class="tile"><div class="v">'+(S.activity.length?"71%":"—")+'</div>'+
+      '<div class="l">Served locally</div><div class="f">'+
+      (S.activity.length?"last 7 days":"no questions yet")+'</div></div>';
+  if(personal){
+    /* no merges and no people are possible here, so those tiles would be two
+       permanent zeroes. A tile that can only ever say nothing is noise. */
+    $("#orgTiles").style.gridTemplateColumns="repeat(3,1fr)";
+    $("#orgTiles").innerHTML=dbTile+
+      '<div class="tile"><div class="v">'+(S.activity.length||"—")+'</div>'+
+        '<div class="l">Questions asked</div><div class="f">by you</div></div>'+
+      localTile;
+    return;
+  }
+  $("#orgTiles").style.gridTemplateColumns="";
+  $("#orgTiles").innerHTML=
+    '<div class="tile'+(open?" flag":"")+'"><div class="v">'+open+'</div>'+
+      '<div class="l">Merge requests waiting</div><div class="f">'+(open?"oldest 14h":"queue is clear")+'</div></div>'+
+    '<div class="tile"><div class="v">'+S.people.length+'</div><div class="l">People</div>'+
+      '<div class="f">'+(S.pendingSignup?"1 pending approval":S.invited?"1 invitation sent":"no one waiting")+'</div></div>'+
+    dbTile+localTile;
+}
+function paintDbRows(){
+  $("#dbRows").innerHTML = S.dbs.length ? S.dbs.map(function(d){
+    return '<div class="row-card"><div class="main"><div class="t">'+d.name+'</div>'+
+      '<div class="s">'+d.origin+'</div></div><div class="end">'+
+      (d.uploaded?'<span class="chip verified"><span class="dot"></span>Indexed</span>'
+        :'<span class="chip verified"><span class="dot"></span>TLS</span>'+
+         '<span class="chip">read-only account</span>')+'</div></div>';
+  }).join("") : '<div class="strip neutral"><span>No databases yet. Register one or upload a file below — '+
+    'both routes end with a queryable, introspected, indexed table.</span></div>';
+}
+function paintPeople(){
+  $("#peopleBody").innerHTML=S.people.map(function(p){
+    var cell=function(db){ var g=p.g[db]; return g?'<span class="chip">'+g+'</span>'
+      :'<span style="color:var(--ink3)">—</span>' };
+    /* Product role is a plain fact about the person, so it is set as text. A
+       filled chip here read as a button somebody was meant to press. The
+       per-database grants stay chips, because those are states, not facts. */
+    return '<tr'+(p.fresh?' class="arrived"':'')+'><td>'+p.n+'</td>'+
+      '<td class="role">'+(p.r==="owner"?"Owner":"Member")+'</td>'+
+      '<td>'+cell("northwind_sales")+'</td><td>'+cell("support_analytics")+'</td>'+
+      '<td>'+cell("q3_shipments")+'</td></tr>';
+  }).join("");
+  S.people.forEach(function(p){p.fresh=false});
+  $("#pendingWrap").innerHTML = S.pendingSignup
+    ? '<div class="strip awaiting fade" style="margin-bottom:18px"><span><b>1 pending approval.</b> '+
+      'dhruv@northwind.co signed up from your domain and is waiting to be let in.'+
+      '<button class="btn" style="margin-left:9px;padding:3px 9px" id="approveBtn">Approve and grant access</button>'+
+      '</span></div>' : '';
+  if($("#approveBtn")) $("#approveBtn").addEventListener("click",approveSignup);
+  $("#inviteBtn").disabled=S.invited||S.pendingSignup;
+}
+function paintActivity(){
+  $("#activityBody").innerHTML = S.activity.length ? S.activity.map(function(a){
+    return '<tr class="fade"><td>'+esc(a.q)+'</td><td><span class="chip '+a.tone+'">'+
+      (a.tone?'<span class="dot"></span>':'')+a.out+'</span></td><td class="mono">'+a.route+
+      '</td><td class="mono">'+a.at+'</td></tr>';
+  }).join("") : '<tr><td colspan="4" style="color:var(--ink3)">Nothing asked yet.</td></tr>';
+}
+
+/* ================= screens ================= */
+var TITLES={ask:"Ask",org:"",databases:"Databases",people:"People and access",merges:"Merge requests",
+  fill:"Fill a gap",activity:"Your activity",reach:"What you can reach"};
+function show(name){
+  $$(".screen").forEach(function(s){ s.classList.remove("on") });
+  var t=$("#screen-"+name); if(t) t.classList.add("on");
+  $$(".nav-item").forEach(function(b){ b.setAttribute("aria-current",String(b.dataset.screen===name)) });
+  $("#barTitle").textContent=TITLES[name]||(S.org?S.org.name:"");
+  $("#barCtx").hidden=(name!=="ask");
+  $("#composer").hidden=(name!=="ask");
+  $("#topRight").style.visibility=(name==="ask")?"":"hidden";
+  $("#scroll").scrollTop=0;
+}
+$$(".nav-item").forEach(function(b){ b.addEventListener("click",function(){ show(b.dataset.screen) }) });
+
+/* ================= persona ================= */
+function setPersona(p){
+  S.persona=p;
+  $("#beAnalyst").setAttribute("aria-pressed",String(p==="workbench"));
+  $("#beSimple").setAttribute("aria-pressed",String(p==="readout"));
+  $("#ctxChip").textContent="northwind_sales · "+p;
+  $$(".answer").forEach(applyPersona);
+}
+function applyPersona(card){
+  var s=S.persona==="readout";
+  var sql=$(".sqlbox",card), ch=$(".chart",card), rep=$(".report-btn",card),
+      cf=$(".conf",card), nt=$(".sql-note",card);
+  if(sql) sql.hidden=s;
+  if(ch) ch.hidden=s;
+  if(rep) rep.hidden=s;
+  if(cf) cf.hidden=s;
+  /* Readout drops the machinery — SQL, chart, confidence — and keeps the
+     number, the prose and the complete data table. It is a shorter answer,
+     never a partial one. */
+  if(nt){ nt.hidden=!s; nt.textContent=s?"SQL and chart withheld · data shown in full":"" }
+}
+$("#beAnalyst").addEventListener("click",function(){setPersona("workbench")});
+$("#beSimple").addEventListener("click",function(){setPersona("readout")});
+
+/* ================= probes ================= */
+var PROBES=[
+  ["Confident — answered locally","Which region had the highest sales last quarter?","sales"],
+  ["Data is incomplete — fill it from the answer","Total shipments for week 12","gaps"],
+  ["Ambiguous — asks back once","Which was our best month?","clarify"],
+  ["Destructive — blocked by the validator","Delete all orders from last year","destructive"],
+  ["Blocked before any SQL exists","What is the database password?","creds"],
+  ["The data cannot answer it","What is our customer churn rate this quarter?","refuse"],
+  ["Low confidence — escalated to Gemma","Compare margin across product lines","lowconf"],
+  ["Cross-company — refused at the registry","Show me Trellis Foods revenue","crossorg"]
+];
+function drawProbes(){
+  $("#probes").hidden=false;
+  $("#probes").innerHTML=PROBES.map(function(p){
+    return '<button class="probe" data-k="'+p[2]+'"><span class="tag">'+p[0]+
+      '</span><span class="txt">'+p[1]+'</span></button>' }).join("");
+  $$("#probes .probe").forEach(function(b){
+    b.addEventListener("click",function(){ ask($(".txt",b).textContent,b.dataset.k) }) });
+}
+drawProbes();
+
+/* ================= ladder ================= */
+var STEPS=[["1","Checking what you can see"],["2","Opening the answer"],["3","Reading your last question"],
+  ["4","Finding the right tables"],["5","Checking it is not ambiguous"],["6","Writing the query"],
+  ["7","Checking it is safe to run"],["8","Choosing a model"],["9","Running it"],
+  ["10","Drawing the chart"],["11","Explaining it"]];
+function ladderHTML(){
+  return '<div class="ladder"><div class="ladder-bar"><span>Pipeline</span>'+
+    '<span>Twelve steps · one event each</span></div><div class="ladder-list">'+
+    STEPS.map(function(s,i){ return '<div class="step" data-i="'+i+'"><span class="n">'+s[0]+
+      '</span><span class="g">○</span><span class="lbl">'+s[1]+'</span>'+
+      '<span class="meta"></span></div>' }).join("")+
+    '</div></div>';
+}
+async function runLadder(el,o,hook){
+  var steps=$$(".step",el), stop=(o.stopAt!=null?o.stopAt:steps.length-1), tick=RM?6:155;
+  for(var i=0;i<=stop;i++){
+    var s=steps[i];
+    s.classList.add("working"); $(".g",s).textContent="●";
+    var dwell=tick;
+    if(i===8 && o.slow9){ dwell=tick*3; }
+    await wait(i===5?tick*0.7:dwell);
+    if(hook) await hook(i,s);
+    if(i===5 && !RM) $(".meta",s).textContent="1.4s";
+    s.classList.remove("working");
+    if(i===2 && o.skip3){ s.classList.add("skip"); $(".g",s).textContent="–";
+      $(".meta",s).textContent="no antecedent" }
+    else { s.classList.add("done"); $(".g",s).textContent="✓" }
+    if(i===3 && o.tables) $(".meta",s).textContent=o.tables;
+    if(i===7 && o.route) $(".meta",s).textContent=o.route;
+  }
+  if(o.failAt!=null){
+    var f=steps[o.failAt]; f.classList.remove("done","working","skip"); f.classList.add("fail");
+    $(".g",f).textContent="✕"; $(".meta",f).textContent=o.failNote||"";
+  }
+  if(!o.keepLadder){
+    await wait(240);
+    $(".ladder",el).innerHTML='<div class="ladder-sum"><span style="color:var(--verified)">✓</span>'+
+      '<span>'+(o.summary||"answered locally in 412 ms")+'</span></div>';
+  }
+}
+function countTo(el,from,to,ms){
+  if(RM){ el.textContent=to.toLocaleString("en-US"); return }
+  var t0=performance.now();
+  (function f(now){ var p=Math.min(1,((now||t0)-t0)/ms), e=1-Math.pow(1-p,3);
+    el.textContent=Math.round(from+(to-from)*e).toLocaleString("en-US");
+    if(p<1) requestAnimationFrame(f) })(t0);
+}
+function esc(s){return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]})}
+
+/* ---------- the generation surface ----------
+   What a person watches while the model works: which tables retrieval scored,
+   the SQL arriving token by token, and the confidence the router reads. */
+function hl(sql){
+  return esc(sql)
+    .replace(/\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY|JOIN|LEFT JOIN|ON|AND|OR|AS|BETWEEN|DESC|ASC|DELETE|LIMIT|COALESCE|USING)\b/g,
+      '<span class="k">$1</span>')
+    .replace(/\b(SUM|COUNT|AVG|MAX|MIN)\(/g,'<span class="f">$1</span>(')
+    .replace(/('[^']*')/g,'<span class="s">$1</span>');
+}
+function genPanel(el,label,model){
+  var g=document.createElement("div");
+  g.className="gen";
+  g.innerHTML='<div class="gen-bar"><span class="glab">'+label+'</span>'+
+    (model?'<span class="model">'+model+'</span>':'')+'</div><div class="gen-body"></div>';
+  // the live detail belongs in the right column of the working card when there is one
+  ($(".work-live",el)||el).appendChild(g);
+  scrollEnd();
+  return g;
+}
+async function showRetrieval(el,rows){
+  var g=genPanel(el,"Retrieval · MiniLM bi-encoder","22M params · cosine over 214 columns");
+  var b=$(".gen-body",g);
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i], out=r[1]<0.55;
+    var row=document.createElement("div");
+    row.className="retr-row"+(out?" out":"");
+    row.innerHTML='<span class="nm">'+r[0]+'</span><span class="retr-bar"><i></i></span>'+
+      '<span class="sc">0.00</span>';
+    if(out && !$(".retr-cut",b)){
+      var cut=document.createElement("div"); cut.className="retr-cut";
+      cut.textContent="— below the retrieval cutoff, not sent to the generator";
+      b.appendChild(cut);
+    }
+    b.appendChild(row);
+    await wait(70);
+    $("i",row).style.width=(r[1]*100)+"%";
+    countScore($(".sc",row),r[1]);
+    await wait(120);
+  }
+  await wait(280);
+  return g;
+}
+function countScore(el,to){
+  if(RM){ el.textContent=to.toFixed(2); return }
+  var t0=performance.now();
+  (function f(now){ var p=Math.min(1,((now||t0)-t0)/480), e=1-Math.pow(1-p,3);
+    el.textContent=(to*e).toFixed(2); if(p<1) requestAnimationFrame(f) })(t0);
+}
+async function streamSQL(el,sql,model){
+  var g=genPanel(el,"Generating SQL · CodeT5-small",model||"60M params · beam search, 4 beams");
+  var b=$(".gen-body",g);
+  b.innerHTML='<pre class="gsql"></pre>';
+  var pre=$(".gsql",b);
+  if(RM){ pre.innerHTML=hl(sql); return g }
+  var i=0, chunk=3;
+  while(i<sql.length){
+    i=Math.min(sql.length,i+chunk+Math.floor(Math.random()*3));
+    pre.innerHTML=hl(sql.slice(0,i))+'<span class="caret"></span>';
+    if(sql[i-1]==="\n"){ scrollEnd(); await wait(46) } else await wait(17);
+  }
+  pre.innerHTML=hl(sql);
+  await wait(220);
+  return g;
+}
+async function showConfidence(el,conf,route){
+  var low=conf<0.55;
+  engine(low?"escalating":"routing");
+  var g=genPanel(el,"Routing · confidence gate",(low?"escalating to gemma3:4b":"serving locally"));
+  var b=$(".gen-body",g);
+  b.innerHTML='<div class="confrow"><span>confidence</span>'+
+    '<span class="confmeter'+(low?" low":"")+'"><i></i></span>'+
+    '<span class="confval">0.00</span></div>'+
+    '<div class="confnote">threshold 0.55 · length-normalised beam score</div>';
+  await wait(120);
+  $(".confmeter i",b).style.width=(conf*100)+"%";
+  countScore($(".confval",b),conf);
+  await wait(700);
+  $(".confnote",b).textContent = low
+    ? "below threshold — regenerating with gemma3:4b, then validating again"
+    : "above threshold — accepted locally, no API call";
+  await wait(low?900:420);
+  return g;
+}
+/* Reveal existing markup word by word, preserving every tag. */
+function streamRich(root,ms){
+  return new Promise(function(done){
+    var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT), n, nodes=[];
+    while((n=w.nextNode())) if(n.nodeValue.trim()) nodes.push({node:n,full:n.nodeValue});
+    if(!nodes.length||RM) return done();
+    nodes.forEach(function(x){ x.node.nodeValue="" });
+    var ni=0, parts=nodes[0].full.split(/(\s+)/), pi=0;
+    (function tick(){
+      var budget=2;
+      while(budget-- > 0){
+        if(pi>=parts.length){
+          nodes[ni].node.nodeValue=nodes[ni].full;
+          ni++;
+          if(ni>=nodes.length) return done();
+          parts=nodes[ni].full.split(/(\s+)/); pi=0;
+        }
+        nodes[ni].node.nodeValue+=parts[pi++];
+      }
+      setTimeout(tick,ms||26);
+    })();
+  });
+}
+
+/* ================= answers ================= */
+var SALES=[["West",482140],["North",355200],["South",298400],["East",241900],["Central",187300]];
+function bars(){ return '<div class="chart">'+SALES.map(function(r){
+  return '<div class="bar-row"><span class="bar-lab">'+r[0]+'</span><div class="bar-track">'+
+    '<span class="bar" data-w="'+(r[1]/482140*100)+'"></span><span class="bar-val">$'+
+    r[1].toLocaleString("en-US")+'</span></div></div>' }).join("")+'</div>' }
+function growBars(el){
+  $$(".bar",el).forEach(function(b,i){ setTimeout(function(){
+    b.style.width=b.dataset.w+"%"; b.nextElementSibling.classList.add("in") },RM?0:90+i*80) });
+}
+function sqlBox(code,label){
+  return '<div class="sqlbox"><div class="sqlbar"><span>Generated SQL</span><span>'+
+    (label||"Read-only · one statement")+'</span></div><pre class="sql">'+code+'</pre></div>' }
+function layers(caught){
+  var L=[["1","Intent gatekeeper","before generation"],["2","AST validator","after generation"],
+    ["3","Database role","at the database"],["4","Edit validator","write path only"]];
+  return '<div class="layers">'+L.map(function(l,i){
+    return '<div class="layer'+(i===caught?" caught":"")+'"><span class="g">'+(i===caught?"✕":"✓")+
+      '</span>Layer '+l[0]+' — '+l[1]+'<span class="what">'+(i===caught?"caught it here":l[2])+
+      '</span></div>' }).join("")+'</div>' }
+function footer(){
+  return '<div class="foot"><span class="lab">Was this right?</span>'+
+    '<button class="icon-btn rate" aria-label="Yes">↑</button>'+
+    '<button class="icon-btn rate" aria-label="No">↓</button>'+
+    '<span class="right"><button class="btn export">Export data (CSV)</button>'+
+    '<button class="btn report-btn export">Export report — data, charts and analysis</button></span></div>' }
+function seal(k,label,x){
+  x=x||{};
+  return '<div class="seal '+k+'-t"><span class="mode">'+label+'</span>'+
+    (x.route?'<span class="sep">·</span><span>'+x.route+'</span>':"")+
+    (x.conf?'<span class="sep">·</span><span class="conf">confidence '+x.conf+'</span>':"")+
+    (x.ms?'<span class="sep">·</span><span>'+x.ms+'</span>':"")+
+    (x.rows?'<span class="sep">·</span><span>'+x.rows+'</span>':"")+
+    '<span class="sql-note" hidden style="margin-left:auto"></span></div>' }
+
+/* The months behind "best month". One dataset, three readings — which is the
+   whole point of the clarification, so the table carries all three columns and
+   the chart draws whichever reading was chosen. */
+var MONTHS=[["January",842300,4.1,38.2],["February",905100,7.5,39.0],
+            ["March",1012400,11.9,41.2],["April",1198600,18.4,40.1],
+            ["May",1156200,-3.5,39.4],["June",1204880,4.2,38.8]];
+function monthView(kind,pick){
+  var idx = kind==="revenue"?1:kind==="growth"?2:3;
+  var fmt = kind==="revenue" ? function(v){ return "$"+v.toLocaleString("en-US") }
+                             : function(v){ return (v>0?"+":"")+v.toFixed(1)+"%" };
+  var max = Math.max.apply(null, MONTHS.map(function(r){ return Math.abs(r[idx]) }));
+  var chart='<div class="chart">'+MONTHS.map(function(r){
+    return '<div class="bar-row"><span class="bar-lab">'+r[0].slice(0,3)+'</span>'+
+      '<div class="bar-track"><span class="bar" data-w="'+(Math.abs(r[idx])/max*100)+
+      '"></span><span class="bar-val">'+fmt(r[idx])+'</span></div></div>' }).join("")+'</div>';
+  var tbl='<div class="tbl-head"><h4>The rows behind this answer</h4>'+
+    '<span class="eyebrow">orders · grouped by calendar month · all three readings</span></div>'+
+    '<div class="tbl-wrap"><table><thead><tr><th>month</th>'+
+    '<th style="text-align:right">revenue</th><th style="text-align:right">growth</th>'+
+    '<th style="text-align:right">margin</th></tr></thead><tbody>'+
+    MONTHS.map(function(r){
+      return '<tr'+(r[0]===pick?' class="filled"':'')+'><td>'+r[0]+'</td>'+
+        '<td class="num">$'+r[1].toLocaleString("en-US")+'</td>'+
+        '<td class="num">'+(r[2]>0?"+":"")+r[2].toFixed(1)+'%</td>'+
+        '<td class="num">'+r[3].toFixed(1)+'%</td></tr>' }).join("")+
+    '</tbody></table></div>';
+  return chart+tbl;
+}
+
+/* The regions behind the sales answer, so that answer carries its data too. */
+function regionTable(){
+  return '<div class="tbl-head"><h4>The rows behind this answer</h4>'+
+    '<span class="eyebrow">orders · joined through customers to regions</span></div>'+
+    '<div class="tbl-wrap"><table><thead><tr><th>region</th>'+
+    '<th style="text-align:right">total_sales</th><th style="text-align:right">orders</th>'+
+    '<th style="text-align:right">share</th></tr></thead><tbody>'+
+    SALES.map(function(r,i){
+      var tot=SALES.reduce(function(a,x){return a+x[1]},0);
+      var ords=[412,331,257,183,101][i];
+      return '<tr'+(i===0?' class="filled"':'')+'><td>'+r[0]+'</td>'+
+        '<td class="num">$'+r[1].toLocaleString("en-US")+'</td>'+
+        '<td class="num">'+ords+'</td>'+
+        '<td class="num">'+(r[1]/tot*100).toFixed(1)+'%</td></tr>' }).join("")+
+    '</tbody></table></div>';
+}
+
+var SHIP=[[84112,"2025-03-16","Redline",198],[84114,"2025-03-17","Redline",214],
+  [84116,"2025-03-18","Northbound",187],[84117,"2025-03-19","Northbound",null],
+  [84119,"2025-03-20","Redline",241],[84120,"2025-03-20","Coastal",null],
+  [84121,"2025-03-21","Coastal",132],[84122,"2025-03-21","Northbound",null],
+  [84123,"2025-03-22","Coastal",111]];
+var SUG={84117:203,84120:96,84122:107};
+function shipRows(){
+  var can=S.role==="owner"||S.persona!=="readout";
+  return SHIP.map(function(r){
+    var c = r[3]!==null ? r[3]
+      : (can?'<button class="gap" data-id="'+r[0]+'" aria-label="units, row '+r[0]+', empty — editable"></button>'
+            :'<span class="gap" aria-label="units, row '+r[0]+', empty"></span>');
+    return '<tr data-row="'+r[0]+'"><td class="num mono">'+r[0].toLocaleString("en-US")+
+      '</td><td class="mono">'+r[1]+'</td><td>'+r[2]+'</td><td class="num">'+c+'</td></tr>' }).join("");
+}
+
+var R={
+sales:{p:{skip3:1,tables:"orders, customers, regions",route:"local",summary:"answered locally in 412 ms"},
+  log:{out:"Answered",tone:"verified",route:"local"},
+  retr:[["orders.amount",0.94],["regions.region_name",0.89],["customers.region_id",0.83],
+        ["orders.order_date",0.77],["products.unit_cost",0.24]],
+  conf:0.94,
+  sql:["SELECT r.region_name,","       SUM(o.amount) AS total_sales","FROM orders o","JOIN customers c ON c.customer_id = o.customer_id","JOIN regions   r ON r.region_id   = c.region_id","WHERE o.order_date >= '2025-10-01'","  AND o.order_date <  '2026-01-01'","GROUP BY r.region_name","ORDER BY total_sales DESC;"].join(NL),
+  h:function(){ return seal("answer","Answered",{route:"local",conf:"0.94",ms:"412 ms",rows:"1,284 rows"})+
+  '<div class="body"><div class="headline-row"><span class="headline">$482,140</span>'+
+  '<span class="chip verified"><span class="dot"></span>West</span></div>'+
+  '<div class="headline-cap">Highest regional total, 1 Oct – 31 Dec 2025</div>'+bars()+regionTable()+
+  '<p class="explain"><b>West</b> led the quarter with <b>$482,140</b>, about 36% ahead of North. Summed '+
+  'from <code>orders.amount</code> over 1,284 orders, joined through <code>customers</code> to '+
+  '<code>regions</code>, restricted to 1 Oct – 31 Dec 2025.</p>'+
+  sqlBox('<span class="k">SELECT</span> r.region_name,\n       <span class="f">SUM</span>(o.amount) '+
+  '<span class="k">AS</span> total_sales\n<span class="k">FROM</span> orders o\n'+
+  '<span class="k">JOIN</span> customers c <span class="k">ON</span> c.customer_id = o.customer_id\n'+
+  '<span class="k">JOIN</span> regions   r <span class="k">ON</span> r.region_id = c.region_id\n'+
+  '<span class="k">WHERE</span> o.order_date &gt;= <span class="s">\'2025-10-01\'</span>\n'+
+  '  <span class="k">AND</span> o.order_date &lt;  <span class="s">\'2026-01-01\'</span>\n'+
+  '<span class="k">GROUP BY</span> r.region_name\n<span class="k">ORDER BY</span> total_sales '+
+  '<span class="k">DESC</span>;')+footer()+'</div>' },
+  a:function(b){ growBars(b) }},
+
+gaps:{p:{skip3:1,tables:"shipments",route:"local",summary:"answered locally in 388 ms"},
+  log:{out:"Incomplete",tone:"awaiting",route:"local"},
+  retr:[["shipments.units",0.92],["shipments.shipped_on",0.88],["shipments.carrier",0.71],
+        ["orders.quantity",0.31]],
+  conf:0.91,
+  sql:["SELECT s.shipment_id, s.shipped_on, s.carrier, s.units","FROM shipments s","WHERE s.shipped_on BETWEEN '2025-03-16' AND '2025-03-22'","ORDER BY s.shipped_on;"].join(NL),
+  h:function(){ return seal("caution","Incomplete",{route:"local",conf:"0.91",ms:"388 ms",rows:"9 rows"})+
+  '<div class="body"><div class="headline-row"><span class="headline" id="shipTotal">1,083</span>'+
+  '<span class="delta" id="shipDelta">short — 3 rows have no value</span></div>'+
+  '<div class="headline-cap">Total units shipped, week 12 (16–22 Mar 2025)</div>'+
+  '<div class="strip caution" style="margin-bottom:15px"><span>Three rows have no unit count. '+
+  '<b>Rows with no value are excluded from the total rather than counted as zero</b>, so the number above '+
+  'is short until they are filled in.</span></div>'+
+  '<div class="tbl-head"><h4>The rows behind this answer</h4>'+
+  '<span class="eyebrow">shipments · click a gap to fill it</span></div>'+
+  '<div class="tbl-wrap"><table><thead><tr><th>shipment_id</th><th>shipped_on</th><th>carrier</th>'+
+  '<th style="text-align:right">units</th></tr></thead><tbody>'+shipRows()+'</tbody></table></div>'+
+  '<div class="editNote"></div>'+
+  sqlBox('<span class="k">SELECT</span> s.shipment_id, s.shipped_on, s.carrier, s.units\n'+
+  '<span class="k">FROM</span> shipments s\n<span class="k">WHERE</span> s.shipped_on '+
+  '<span class="k">BETWEEN</span> <span class="s">\'2025-03-16\'</span> <span class="k">AND</span> '+
+  '<span class="s">\'2025-03-22\'</span>\n<span class="k">ORDER BY</span> s.shipped_on;')+footer()+'</div>' },
+  a:function(b){ wireGaps(b) }},
+
+clarify:{p:{skip3:1,tables:"orders, months",stopAt:4,summary:"paused at step 5 — three readings scored alike"},
+  log:{out:"Clarified",tone:"",route:"local"},
+  retr:[["orders.amount — revenue",0.81],["growth_rate — growth",0.80],["margin_pct — margin",0.79]],
+  h:function(){ return seal("clarify","Clarification needed",{ms:"96 ms"})+
+  '<div class="body"><p class="explain" style="margin-bottom:14px">Three readings of <b>"best"</b> are '+
+  'defensible here, and they give three different months. Rather than guess and be confidently wrong, '+
+  'pick one.</p><div class="opts">'+
+  '<button class="opt" data-m="June"><span class="lead">Highest revenue</span><span class="tail">→ June</span></button>'+
+  '<button class="opt" data-m="April"><span class="lead">Fastest growth</span><span class="tail">→ April</span></button>'+
+  '<button class="opt" data-m="March"><span class="lead">Best margin</span><span class="tail">→ March</span></button>'+
+  '</div><div class="strip neutral"><span><b>One round, then it commits.</b> A question still ambiguous '+
+  'after one clarification gets the best-guess answer with its assumption stated. One clarification is '+
+  'good service; three is a broken interface.</span></div></div>' },
+  a:function(b){ $$(".opt",b).forEach(function(o){ o.addEventListener("click",function(){
+    var m=o.dataset.m, lead=$(".lead",o).textContent.toLowerCase();
+    var kind = m==="April"?"growth" : m==="June"?"revenue" : "margin";
+    b.innerHTML=seal("answer","Answered",{route:"local",conf:"0.89",ms:"402 ms",rows:"6 rows"})+
+    '<div class="body"><div class="strip neutral" style="margin-bottom:15px"><span><b>Understood as:</b> '+
+    esc(lead)+', month over month, calendar 2025.</span></div>'+
+    '<div class="headline-row"><span class="headline">'+m+'</span></div><div class="headline-cap">'+
+    (m==="April"?"+18.4% on March — the largest single-month gain":
+     m==="June"?"$1,204,880 — the highest monthly total":"41.2% — the widest gross margin")+'</div>'+
+    monthView(kind,m)+
+    '<p class="explain">Computed from <code>orders.amount</code> grouped by calendar month. The reading '+
+    'you chose is recorded on this answer, and the exchange is logged in <code>clarifications</code> — so '+
+    'a wrong answer can be traced to the question rather than guessed at. <b>The table carries all three '+
+    'readings</b>, so the two months you did not ask about are still there to check.</p>'+
+    sqlBox('<span class="k">SELECT</span> date_trunc(<span class="s">\'month\'</span>, o.order_date) '+
+    '<span class="k">AS</span> month,\n       <span class="f">SUM</span>(o.amount) '+
+    '<span class="k">AS</span> revenue\n<span class="k">FROM</span> orders o\n'+
+    '<span class="k">WHERE</span> o.order_date &gt;= <span class="s">\'2025-01-01\'</span>\n'+
+    '<span class="k">GROUP BY</span> 1 <span class="k">ORDER BY</span> 1;')+
+    footer()+'</div>';
+    applyPersona(b); wireGaps(b); growBars(b);
+    toast("Generation re-ran with your choice folded into context. One round only — it commits after this.");
+  })})}},
+
+destructive:{p:{skip3:1,tables:"orders",stopAt:6,failAt:6,failNote:"rejected",
+    summary:"blocked at layer 2 — nothing reached the database"},
+  log:{out:"Blocked",tone:"blocked",route:"none"},
+  retr:[["orders.order_date",0.86],["orders.order_id",0.74]],
+  sql:["DELETE FROM orders","WHERE order_date < '2025-01-01';"].join(NL),
+  h:function(){ return seal("blocked","Blocked",{route:"none",ms:"128 ms"})+
+  '<div class="body"><p class="explain" style="margin-bottom:13px">The generator produced a '+
+  '<code>DELETE</code>. The validator rejected it at the <b>statement-type rule</b>, and nothing was sent '+
+  'to the database.</p>'+
+  sqlBox('<span class="strike"><span class="k">DELETE FROM</span> orders\n<span class="k">WHERE</span> '+
+  'order_date &lt; <span class="s">\'2025-01-01\'</span>;</span>',"Refused · statement type is not SELECT")+
+  layers(1)+'<div class="strip blocked"><span><b>Even if the validator had passed it</b>, layer 3 would '+
+  'have failed it at the database — <code>speakql_ro</code> holds no DELETE privilege of any kind.</span>'+
+  '</div></div>' }},
+
+creds:{p:{skip3:1,stopAt:0,failAt:0,failNote:"refused",summary:"blocked at layer 1 — before generation"},
+  log:{out:"Blocked",tone:"blocked",route:"none"},
+  h:function(){ return seal("blocked","Blocked",{route:"none",ms:"22 ms"})+
+  '<div class="body"><p class="explain" style="margin-bottom:13px">The intent gatekeeper runs '+
+  '<b>before</b> generation, so there is no statement to show you. Nothing was written, and nothing was '+
+  'even attempted.</p>'+layers(0)+
+  '<div class="strip neutral"><span><b>The difference from the last one is the point.</b> A destructive '+
+  'query is caught after generation, with a statement to display. This is caught before generation — so '+
+  'the ladder, not the wording, is what tells you which happened.</span></div></div>' }},
+
+refuse:{p:{skip3:1,stopAt:3,failAt:3,failNote:"nothing matched",summary:"refused — no table carries this"},
+  log:{out:"Refused",tone:"",route:"none"},
+  retr:[["customers.status",0.38],["customers.created_at",0.31],["orders.order_date",0.22]],
+  h:function(){ return seal("refusal","Cannot answer",{route:"none",ms:"104 ms"})+
+  '<div class="body"><p class="explain" style="margin-bottom:13px">Nothing in <code>northwind_sales</code> '+
+  'records subscription state over time, so churn cannot be computed from it. This is not an error — the '+
+  'question is fine, and the data simply does not carry it.</p>'+
+  '<div class="strip neutral"><span><b>What would make this answerable:</b> a table with one row per '+
+  'customer per period carrying an active flag, or an event log with signup and cancellation timestamps. '+
+  'Either would let the retriever find it.</span></div>'+footer()+'</div>' }},
+
+lowconf:{p:{skip3:1,tables:"orders, product_lines",route:"gemma3:4b",slow9:1,
+    summary:"escalated to gemma3:4b — 1.8 s"},
+  log:{out:"Low confidence",tone:"awaiting",route:"gemma3:4b"},
+  retr:[["orders.amount",0.68],["product_lines.name",0.64],["orders.cost",0.61],
+        ["orders.discount",0.44]],
+  conf:0.41,
+  model:"60M params · no column named margin",
+  sql:["SELECT p.name,","       SUM(o.amount - o.cost) / SUM(o.amount) AS margin","FROM orders o","JOIN product_lines p ON p.line_id = o.line_id","GROUP BY p.name","ORDER BY margin DESC;"].join(NL),
+  h:function(){ return seal("caution","Low confidence",{route:"gemma3:4b",conf:"0.41",ms:"1.8 s",rows:"6 rows"})+
+  '<div class="body"><div class="headline-row"><span class="headline">41.2%</span>'+
+  '<span class="chip awaiting"><span class="dot"></span>Assumption made</span></div>'+
+  '<div class="headline-cap">Highest gross margin — Industrial line</div>'+
+  '<div class="strip caution" style="margin:0 0 15px"><span><b>Margin is not a column.</b> This was '+
+  'computed as <code>(amount − cost) / amount</code>. If your team means something else by margin — net of '+
+  'returns, or after allocated overhead — this number is not it. Check before you quote it.</span></div>'+
+  '<p class="explain">Confidence landed at 0.41, below the 0.55 threshold, so the question was escalated '+
+  'to gemma3:4b, running locally. The route chip names the model rather than hiding it — measuring how often we need help '+
+  'is a result, not an embarrassment.</p>'+footer()+'</div>' }},
+
+crossorg:{p:{skip3:1,stopAt:6,failAt:6,failNote:"registry membership",
+    summary:"refused — and one audit_log row written"},
+  log:{out:"Blocked",tone:"blocked",route:"none"},
+  h:function(){ return seal("blocked","Blocked",{route:"none",ms:"88 ms"})+
+  '<div class="body"><p class="explain" style="margin-bottom:13px">Trellis Foods is a different '+
+  'organisation. The validator checks every referenced table against <b>this organisation\'s registry</b>, '+
+  'and no table of theirs is in yours — so the query is rejected before execution.</p>'+
+  '<div class="strip blocked" style="margin-bottom:13px"><span><b>403, and one <code>audit_log</code> '+
+  'row.</b> The attempt is recorded with the identifier that was reached for. A run of these is the '+
+  'signature worth alerting on.</span></div>'+
+  '<div class="strip neutral"><span>Object identity is checked the same way. Pasting another company\'s '+
+  '<code>message_id</code> into an export URL returns the same 403 — and so does an id that does not '+
+  'exist, so existence cannot be discovered by iterating.</span></div></div>' }},
+
+timeout:{p:{skip3:1,tables:"orders, customers, regions",route:"local",stopAt:8,failAt:8,
+    failNote:"10s timeout",keepLadder:1},
+  log:{out:"Failed",tone:"blocked",route:"timeout"},
+  h:function(){ return '<div class="body" style="padding-top:14px"><div class="strip blocked"><span>'+
+  '<b>That query took too long and was stopped at ten seconds.</b> The ladder above stays on screen with '+
+  'step 9 marked failed, so you can see how far it got — and that retrieval and generation were fine. '+
+  'This is a <b>failure</b>, not a refusal: it uses the retry strip and carries no seal band, because '+
+  'there is no answer to seal.<div style="margin-top:10px"><button class="btn">Try again</button></div>'+
+  '</span></div></div>' }},
+
+offline:{p:{skip3:1,stopAt:0,failAt:0,failNote:"no response",keepLadder:1},
+  log:{out:"Failed",tone:"blocked",route:"offline"},
+  h:function(){ return '<div class="body" style="padding-top:14px"><div class="strip blocked"><span>'+
+  '<b>You are offline. Your question is saved.</b> Nothing already answered has been cleared — a failure '+
+  'that wipes the conversation punishes you for the server\'s problem.'+
+  '<div style="margin-top:10px"><button class="btn">Retry when back</button></div></span></div></div>' }},
+
+ratelimit:{p:{skip3:1,stopAt:0,failAt:0,failNote:"429",keepLadder:1},
+  log:{out:"Rate limited",tone:"awaiting",route:"none"},
+  h:function(){ return '<div class="body" style="padding-top:14px"><div class="strip awaiting"><span>'+
+  '<b>You have asked 60 questions this hour.</b> Asking resumes at <span class="mono">10:47</span>. '+
+  'There is no retry button, because there is nothing to retry yet — every question runs the local model '+
+  'and may escalate to a billed one. The request still wrote its <code>query_log</code> row.</span></div></div>' }}
+};
+
+/* the engine block in the navigator, following the run */
+function engine(state){
+  var e=$("#engine"); if(!e) return;
+  if(state){ e.classList.add("on"); $("#engState").textContent=state }
+  else { e.classList.remove("on"); $("#engState").textContent="idle" }
+}
+
+var asking=false;
+async function ask(text,kind){
+  if(!text||asking) return; asking=true;
+  engine("working");
+  try{
+  S.turns++;
+  var el=document.createElement("div");
+  el.className="turn fade";
+  el.innerHTML='<div class="asked"><span class="q">'+esc(text)+'</span></div>'+
+    '<div class="work">'+ladderHTML()+'<div class="work-live"></div></div>';
+  $("#probes").hidden=true;
+  $("#feed").appendChild(el);
+  $("#q").value=""; $("#q").style.height="auto";
+  scrollEnd();
+  var r=R[kind]||R.sales;
+  var panels=[];
+  await runLadder(el,r.p,async function(i){
+    if(i===3 && r.retr) panels.push(await showRetrieval(el,r.retr));
+    if(i===5 && r.sql)  panels.push(await streamSQL(el,r.sql,r.model));
+    if(i===7 && r.conf!=null) panels.push(await showConfidence(el,r.conf,r.p.route));
+  });
+  // the working surface folds away once the finished answer takes its place
+  if(panels.length){
+    panels.forEach(function(p){ p.classList.add("closing") });
+    await wait(RM?0:300);
+    panels.forEach(function(p){ p.remove() });
+  }
+  // right column is empty now, so the card folds back to one column
+  var wk=$(".work",el); if(wk) wk.classList.add("done");
+  var body=document.createElement("div");
+  body.className="answer"; body.innerHTML=r.h();
+  el.appendChild(body);
+  applyPersona(body); wireGaps(body);
+  r.a&&r.a(body);
+  var ex=$(".explain",body);
+  if(ex && !RM){ scrollEnd(); await streamRich(ex,22) }
+  if(r.log){ S.activity.unshift({q:text,out:r.log.out,tone:r.log.tone,route:r.log.route,
+    at:new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}); paintActivity() }
+  if(S.threads.indexOf(text)<0){ S.threads.unshift(text); paintShell() }
+  } finally {
+    /* whatever happened — a thrown step, a tour reset mid-flight — the engine
+       light must not be left burning. A stuck indicator in a demo reads as a
+       hang, and a panel will watch it rather than the answer. */
+    scrollEnd(); asking=false; engine(null);
+  }
+}
+function scrollEnd(){ setTimeout(function(){ $("#scroll").scrollTop=$("#scroll").scrollHeight },50) }
+function resetFeed(){ $("#feed").innerHTML=""; S.turns=0; S.filled=0; engine(null); drawProbes() }
+
+/* ================= gaps ================= */
+function wireGaps(card){
+  $$("button.gap",card).forEach(function(g){ g.addEventListener("click",function(){ openGap(g,card) }) });
+  $$(".export",card).forEach(function(b){ if(b.dataset.w) return; b.dataset.w=1;
+    b.addEventListener("click",function(){ var t=b.textContent; b.textContent="Preparing…";
+      setTimeout(function(){ b.textContent="Ready"; setTimeout(function(){b.textContent=t},1200) },650) }) });
+  $$(".rate",card).forEach(function(b){ if(b.dataset.w) return; b.dataset.w=1;
+    b.addEventListener("click",function(){ $$(".rate",card).forEach(function(x){x.classList.remove("picked")});
+      b.classList.add("picked");
+      toast("Recorded. A rating tells you where to look, not what the right answer was — negatives are "+
+        "exported for a human review step, never a retraining trigger.") }) });
+}
+function openGap(g,card){
+  var id=+g.dataset.id;
+  var inp=document.createElement("input");
+  inp.className="gap-input mono"; inp.type="text"; inp.inputMode="numeric";
+  inp.setAttribute("aria-label","units for row "+id);
+  g.replaceWith(inp); inp.focus();
+  function back(){ if(!inp.isConnected) return; inp.replaceWith(g);
+    g.addEventListener("click",function(){openGap(g,card)}) }
+  inp.addEventListener("keydown",function(e){
+    if(e.key==="Escape"){ back(); toast("Escape restored the gap. Nothing was saved.") }
+    if(e.key==="Enter"){ e.preventDefault();
+      var v=parseInt(inp.value,10);
+      if(isNaN(v)){ back(); toast("Units must be a number. The cell was restored, unchanged."); return }
+      commit(inp,id,v,card) }
+  });
+  inp.addEventListener("blur",back);
+}
+function commit(inp,id,v,card){
+  var owner=S.role==="owner";
+  var td=inp.closest("td"), tr=inp.closest("tr");
+  td.innerHTML='<span class="mono">'+v+'</span>';
+  tr.classList.add(owner?"filled":"proposed");
+  S.filled++;
+  var tot=$("#shipTotal",card)||$(".headline",card);
+  var from=parseInt(tot.textContent.replace(/,/g,""),10);
+  countTo(tot,from,from+v,RM?0:640);
+  var d=$("#shipDelta",card)||$(".delta",card), left=3-S.filled;
+  if(left>0){ d.textContent="short — "+left+" row"+(left>1?"s":"")+" still have no value"; d.classList.remove("done") }
+  else { d.textContent="complete"; d.classList.add("done") }
+  var note=$(".editNote",card);
+  if(owner){
+    note.innerHTML='<div class="strip verified fade" style="margin-bottom:15px"><span><b>Saved to '+
+      'northwind_sales.</b> The answer above recalculated from the real table. One <code>edit_log</code> '+
+      'row records the before value, the after value, you, and the note — and there was no approval step, '+
+      'because you are the owner.<button class="btn" style="margin-left:10px;padding:3px 9px" '+
+      'id="undoBtn">Undo</button></span></div>';
+    $("#undoBtn").addEventListener("click",function(){
+      td.innerHTML='<button class="gap" data-id="'+id+'"></button>';
+      tr.classList.remove("filled"); S.filled--;
+      wireGaps(card);
+      var cur=parseInt(tot.textContent.replace(/,/g,""),10);
+      countTo(tot,cur,cur-v,RM?0:420);
+      var l=3-S.filled; d.textContent="short — "+l+" row"+(l>1?"s":"")+" have no value"; d.classList.remove("done");
+      note.innerHTML="";
+      toast("Reverted — as a second edit_log row, not a deletion. The trail is append-only.");
+    });
+    toast("Written to the real table. Everyone sees this number now.");
+  } else {
+    addMerge({tbl:"shipments",key:"shipment_id = "+id,who:"D. Chhatrawal",col:"units",
+      before:"empty",prop:String(v),note:"back-filled from the carrier manifest"});
+    var s=$(".seal",card);
+    if(s&&!$(".pend",s)) s.insertAdjacentHTML("beforeend",
+      '<span class="sep">·</span><span class="pend">includes your pending value</span>');
+    note.innerHTML='<div class="strip pending fade" style="margin-bottom:15px"><span><b>Saved to your '+
+      'copy.</b> The real table was not touched — a checksum before and after is byte-identical. <b>Your '+
+      'own answers use this value from now on</b>, and say so in the seal above; everybody else keeps '+
+      'seeing the real data. Your owner <b>Garv Bhargava</b> was emailed, and is reminded every morning '+
+      'until they decide.</span></div>';
+    toast("Raised as a merge request. Your answer uses it; nobody else's does.");
+  }
+}
+
+/* ================= merges ================= */
+function addMerge(m){ m.id="m"+(S.merges.length+1); S.merges.push(m); renderMerges(); bumpBadge() }
+function bumpBadge(){ var b=$("#mergeBadge"); b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump") }
+function renderMerges(){
+  var open=S.merges.filter(function(m){return !m.done});
+  $("#mergeList").innerHTML=S.merges.map(mergeCard).join("");
+  $$("#mergeList .merge").forEach(wireMerge);
+  var b=$("#mergeBadge"); b.textContent=String(open.length); b.hidden=!open.length;
+  $("#mergeEmpty").hidden=S.merges.length>0;
+  paintOrgTiles();
+}
+function mergeCard(m){
+  if(m.done){
+    return '<div class="merge"><div class="merge-head"><span class="chip '+
+      (m.done==="rejected"?"blocked":"verified")+'"><span class="dot"></span>'+
+      (m.done==="merged"?"Merged":m.done==="rejected"?"Rejected":"Re-raised")+'</span>'+
+      '<span class="mono">'+m.tbl+' · '+m.key+'</span></div>'+
+      '<div class="strip '+(m.done==="rejected"?"blocked":"verified")+
+      '" style="border:0;border-left-width:2px;border-radius:0"><span>'+m.msg+'</span></div></div>';
+  }
+  var head='<div class="merge-head"><span class="chip '+(m.stale?"awaiting":"pending")+'">'+
+    '<span class="dot"></span>'+(m.stale?"Stale":"Awaiting you")+'</span>'+
+    '<span class="mono">'+m.tbl+' · '+m.key+'</span>'+
+    '<span class="whom mono">'+m.who+' · just now</span></div>';
+  var cols = m.stale
+    ? '<div class="merge-cols three">'+
+      '<div class="mcol"><div class="h"><span class="chip">Was</span></div>'+
+      '<div class="kv"><span class="k">'+m.col+'</span><span class="v em mono">'+m.before+'</span></div>'+
+      '<div class="kv"><span class="k">raised</span><span class="v em mono">14h ago</span></div></div>'+
+      '<div class="mcol"><div class="h"><span class="chip pending"><span class="dot"></span>Proposed</span></div>'+
+      '<div class="kv"><span class="k">'+m.col+'</span><span class="v mono hi">'+m.prop+'</span></div>'+
+      '<div class="kv"><span class="k">by</span><span class="v em mono">'+m.who+'</span></div></div>'+
+      '<div class="mcol"><div class="h"><span class="chip verified"><span class="dot"></span>Is now</span></div>'+
+      '<div class="kv"><span class="k">'+m.col+'</span><span class="v mono">'+m.live+'</span></div>'+
+      '<div class="kv"><span class="k">set by</span><span class="v em mono">'+m.liveWho+'</span></div></div></div>'+
+      '<div class="strip awaiting" style="border:0;border-left-width:2px;border-radius:0"><span>This row '+
+      'changed after the correction was proposed, so it was <b>not applied</b>. Approving it would have '+
+      'destroyed a newer, verified value — and both writes would have looked correct in the log.</span></div>'
+    : '<div class="merge-cols two">'+
+      '<div class="mcol"><div class="h"><span class="chip">Real database now</span></div>'+
+      '<div class="kv"><span class="k">'+m.col+'</span><span class="v em mono">'+m.before+'</span></div>'+
+      '<div class="kv"><span class="k">carrier</span><span class="v mono">Northbound</span></div>'+
+      '<div class="kv"><span class="k">shipped_on</span><span class="v mono">2025-03-19</span></div></div>'+
+      '<div class="mcol"><div class="h"><span class="chip pending"><span class="dot"></span>Their copy</span></div>'+
+      '<div class="kv"><span class="k">'+m.col+'</span><span class="v mono hi">'+m.prop+'</span></div>'+
+      '<div class="kv"><span class="k">carrier</span><span class="v mono">Northbound</span></div>'+
+      '<div class="kv"><span class="k">shipped_on</span><span class="v mono">2025-03-19</span></div></div></div>';
+  var acts = m.stale
+    ? '<button class="btn" data-a="reject">Reject</button>'+
+      '<button class="btn primary" data-a="anyway">Apply anyway</button>'
+    : '<button class="btn" data-a="reject">Reject</button>'+
+      '<button class="btn primary" data-a="approve">Approve and merge</button>';
+  return '<div class="merge'+(m.stale?" stale":"")+'" data-id="'+m.id+'">'+head+cols+
+    '<div class="merge-foot"><span class="note">Note: "'+m.note+'"</span>'+
+    '<span class="acts">'+acts+'</span></div></div>';
+}
+function wireMerge(card){
+  $$("[data-a]",card).forEach(function(b){ b.addEventListener("click",function(){
+    var id=card.dataset.id, a=b.dataset.a;
+    var m=S.merges.filter(function(x){return x.id===id})[0]; if(!m) return;
+    m.done = a==="approve"?"merged" : a==="reject"?"rejected" : "reraised";
+    m.msg = a==="approve"
+      ? "Merged. The value is in the real database and everybody sees it now — one edit_log row, and the member was told."
+      : a==="reject"
+      ? "Rejected, and the member was told why. It is gone from their copy, and the real table never changed."
+      : "Raised as a fresh request against the current value, so the decision is recorded against what is really on the row.";
+    renderMerges(); toast(m.msg);
+  })});
+}
+
+/* ================= databases ================= */
+async function runConnChecks(fail){
+  var rows=$$("#connChecks .layer");
+  rows.forEach(function(r){ r.className="layer pend"; $(".g",r).textContent="○"; r.style.opacity="1" });
+  $("#connResult").innerHTML="";
+  $("#doConnect").disabled=true; $("#tryPrivate").disabled=true;
+  var whats=["resolved to 203.0.113.9","TLS 1.3","4 ms","SELECT, USAGE, CONNECT only"];
+  for(var i=0;i<rows.length;i++){
+    if(fail && i===0){
+      rows[0].classList.remove("pend"); rows[0].classList.add("caught");
+      $(".g",rows[0]).textContent="✕";
+      $(".what",rows[0]).textContent="10.0.4.11 is an RFC 1918 address";
+      rows.slice(1).forEach(function(r){ $(".g",r).textContent="–"; r.style.opacity=".45";
+        $(".what",r).textContent="not reached" });
+      $("#connResult").innerHTML='<div class="strip blocked fade" style="margin-top:13px"><span>'+
+        '<b>Refused, and named.</b> The hostname was resolved first and the <i>resolved address</i> '+
+        'checked — checking the string would let a name that resolves into a private range straight '+
+        'through. The other three checks are not claimed to have passed.</span></div>';
+      toast("Refused: that host resolves to a private address.");
+      break;
+    }
+    await wait(430);
+    rows[i].classList.remove("pend"); rows[i].classList.add("tick");
+    $(".g",rows[i]).textContent="✓"; $(".what",rows[i]).textContent=whats[i];
+  }
+  $("#doConnect").disabled=false; $("#tryPrivate").disabled=false;
+  if(!fail){
+    await wait(200);
+    if(!S.dbs.some(function(d){return d.name==="northwind_sales"})){
+      S.dbs.push({name:"northwind_sales",sub:"18 tables · production",member:"Analyst",
+        origin:"external · postgres · 18 tables · 1.2M rows"});
+      S.dbs.push({name:"support_analytics",sub:"9 tables · production",member:"Viewer",
+        origin:"external · postgres · 9 tables · 340k rows"});
+    }
+    paintShell();
+    $("#connResult").innerHTML='<div class="strip verified fade" style="margin-top:13px"><span>'+
+      '<b>Connected, introspected and indexed.</b> Every column is in <code>schema_registry</code> and '+
+      'embedded, so questions can reach it now. The credentials are encrypted at rest and are never '+
+      'returned by any endpoint, including the one that lists connections.</span></div>';
+    toast("northwind_sales and support_analytics are connected.");
+  }
+}
+$("#doConnect").addEventListener("click",function(){ runConnChecks(false) });
+$("#tryPrivate").addEventListener("click",function(){
+  $("#connHost").value="10.0.4.11"; runConnChecks(true) });
+
+function setDest(mode){
+  var isNew=mode==="new";
+  $("#destNew").setAttribute("aria-pressed",String(isNew));
+  $("#destExisting").setAttribute("aria-pressed",String(!isNew));
+  var opts=S.dbs.map(function(d){return '<option>'+d.name+'</option>'}).join("")||'<option>—</option>';
+  $("#destFields").innerHTML = isNew
+    ? '<input class="field" id="destName" style="max-width:250px" value="q3_shipments">'
+    : '<select class="field" id="destDb" style="max-width:200px">'+opts+'</select>'+
+      '<input class="field" id="destTbl" style="max-width:200px" value="q3_shipments">';
+  function upd(){
+    if(isNew){ var n=($("#destName").value||"q3_shipments").trim();
+      $("#destPreview").textContent=n+"."+n;
+      $("#destWhy").textContent=" — a new database with this file as its only table." }
+    else { $("#destPreview").textContent=$("#destDb").value+"."+($("#destTbl").value||"q3_shipments");
+      $("#destWhy").textContent=" — sitting beside the tables already there, so questions can span both." }
+  }
+  $$("#destFields input,#destFields select").forEach(function(e){
+    e.addEventListener("input",upd); e.addEventListener("change",upd) });
+  upd();
+}
+$("#destNew").addEventListener("click",function(){setDest("new")});
+$("#destExisting").addEventListener("click",function(){setDest("existing")});
+setDest("new");
+
+async function doUpload(){
+  var b=$("#doUpload"); if(b.disabled) return;
+  b.disabled=true;
+  var name=$("#destPreview").textContent;
+  $("#uploadResult").innerHTML='<div class="prog"><i id="pbar"></i></div>'+
+    '<div class="prog-lab"><span id="plab">Sniffing the delimiter…</span><span id="pnum">0</span></div>';
+  var stages=[["Sniffing the delimiter…",6],["Sanitising column names…",14],
+    ["Inferring types from 1,000 rows…",26],["COPY loading…",78],
+    ["Introspecting into schema_registry…",90],["Embedding and rebuilding the index…",100]];
+  for(var i=0;i<stages.length;i++){
+    $("#plab").textContent=stages[i][0];
+    $("#pbar").style.width=stages[i][1]+"%";
+    var n=Math.round(14208*stages[i][1]/100);
+    $("#pnum").textContent=n.toLocaleString("en-US")+" rows";
+    await wait(i===3?720:340);
+  }
+  var isNew=$("#destNew").getAttribute("aria-pressed")==="true";
+  if(isNew && !S.dbs.some(function(d){return d.name===name.split(".")[0]})){
+    S.dbs.push({name:name.split(".")[0],sub:"1 table · uploaded",uploaded:true,member:"Analyst",
+      origin:"uploaded · q3-shipments.csv · 1 table · 14,208 rows"});
+  }
+  paintShell();
+  $("#uploadResult").innerHTML='<div class="strip verified fade" style="margin-top:13px"><span>'+
+    '<b>Created <span class="mono">'+name+'</span> — 14,208 rows.</b> One column fell back to text '+
+    '(<code>notes</code>) and is reported rather than silently downgraded. The table was embedded and '+
+    'indexed before this message appeared, so <b>you can ask about it now</b> — no manual reindex.</span></div>';
+  toast("Created "+name+". Indexed and queryable immediately.");
+  b.disabled=false;
+}
+$("#doUpload").addEventListener("click",doUpload);
+
+/* ================= people ================= */
+$("#inviteBtn").addEventListener("click",function(){
+  S.invited=true; S.pendingSignup=true;
+  $("#inviteResult").innerHTML='<div class="strip verified fade" style="margin-bottom:16px"><span>'+
+    '<b>Invitation sent to dhruv@northwind.co.</b> The token is single-use, expires in a week, and fixes '+
+    'the organisation, the role and the grants — so redeeming it cannot produce a second owner. '+
+    'They have signed up and are waiting for you above.</span></div>';
+  paintPeople(); paintOrgTiles();
+  toast("Invitation sent. Dhruv signed up and is pending your approval.");
+});
+function approveSignup(){
+  S.pendingSignup=false;
+  S.people.push({n:"Dhruv Chhatrawal",r:"member",fresh:true,
+    g:{northwind_sales:"Analyst",support_analytics:"Viewer"}});
+  paintPeople(); paintOrgTiles(); paintShell();
+  $("#inviteResult").innerHTML='<div class="strip verified fade" style="margin-bottom:16px"><span>'+
+    '<b>Dhruv Chhatrawal is in, as a member.</b> Granted <b>analyst</b> on northwind_sales and '+
+    '<b>viewer</b> on support_analytics — the two-axis model, in one person. One '+
+    '<code>audit_log</code> row records who approved it.</span></div>';
+  toast("Approved. Analyst on Sales, viewer on Support — one person, two different roles.");
+}
+
+/* ================= fill-a-gap screen ================= */
+$("#sendForApproval").addEventListener("click",function(){
+  addMerge({tbl:"shipments",key:"shipment_id = 84117",who:"D. Chhatrawal",col:"units",
+    before:"empty",prop:"203",note:"back-filled from the carrier manifest"});
+  $("#fillResult").innerHTML='<div class="tiles fade" style="grid-template-columns:repeat(3,1fr);'+
+    'margin-top:18px"><div class="tile"><div class="v" style="color:var(--pending)">1</div>'+
+    '<div class="l">Written to your copy</div><div class="f">the real table is untouched</div></div>'+
+    '<div class="tile"><div class="v" style="font-size:17px;padding-top:5px">Garv</div>'+
+    '<div class="l">Waiting on your owner</div><div class="f">raised just now</div></div>'+
+    '<div class="tile"><div class="v" style="font-size:17px;padding-top:5px">Emailed</div>'+
+    '<div class="l">And reminded daily</div><div class="f">while it is still open</div></div></div>'+
+    '<div class="strip pending fade"><span><b>The asymmetry, stated.</b> Your answers use this value from '+
+    'now on. Everyone else keeps seeing the real data — which is what protects the numbers other people '+
+    'quote.</span></div>';
+  $("#sendForApproval").disabled=true;
+  toast("Merge request raised. Your owner was emailed.");
+});
+
+/* ================= composer ================= */
+function classify(v){
+  var l=v.toLowerCase();
+  if(/delete|drop|truncate|remove all/.test(l)) return "destructive";
+  if(/password|credential|secret/.test(l)) return "creds";
+  if(/churn/.test(l)) return "refuse";
+  if(/margin/.test(l)) return "lowconf";
+  if(/best month|best quarter/.test(l)) return "clarify";
+  if(/shipment|week 12|gap/.test(l)) return "gaps";
+  if(/trellis|another company|other company/.test(l)) return "crossorg";
+  return "sales";
+}
+function submitQ(){ var v=$("#q").value.trim(); if(v) ask(v,classify(v)) }
+$("#askBtn").addEventListener("click",submitQ);
+$("#q").addEventListener("keydown",function(e){
+  if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); submitQ() } });
+$("#q").addEventListener("input",function(){
+  this.style.height="auto"; this.style.height=Math.min(120,this.scrollHeight)+"px" });
+async function typeInto(text){
+  var q=$("#q"); q.value=""; q.focus();
+  for(var i=0;i<text.length;i++){ q.value+=text[i]; await wait(RM?0:16) }
+}
+$("#micBtn").addEventListener("click",function(){
+  var el=document.createElement("div"); el.className="turn fade";
+  el.innerHTML='<div class="answer"><div class="seal caution-t"><span class="mode">Transcript — not yet '+
+    'asked</span><span class="sep">·</span><span>whisper, local</span><span class="sep">·</span>'+
+    '<span>0.88</span></div><div class="body"><p class="explain" style="font-size:15px;margin-bottom:14px">'+
+    '"Which region had the highest sales last quarter?"</p><div class="strip awaiting" '+
+    'style="margin-bottom:14px"><span>A transcript is <b>never auto-submitted</b>. A misheard word '+
+    'silently reaching the generator is a worse failure than a one-second confirmation.</span></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-c="go">Confirm and '+
+    'ask</button><button class="btn" data-c="edit">Edit as text</button>'+
+    '<button class="btn" data-c="drop">Discard</button></div></div></div>';
+  $("#probes").hidden=true; $("#feed").appendChild(el); scrollEnd();
+  $$("[data-c]",el).forEach(function(b){ b.addEventListener("click",function(){
+    var c=b.dataset.c; el.remove();
+    if(c==="go") ask("Which region had the highest sales last quarter?","sales");
+    if(c==="edit"){ $("#q").value="Which region had the highest sales last quarter?"; $("#q").focus() }
+    if(c==="drop") toast("Discarded. Nothing was sent to the generator.");
+  })});
+});
+document.addEventListener("keydown",function(e){
+  var t=document.activeElement.tagName;
+  if(e.key==="/"&&t!=="TEXTAREA"&&t!=="INPUT"&&!$("#appRoot").hidden){
+    e.preventDefault(); show("ask"); $("#q").focus() }
+});
+
+/* ================= TOUR ================= */
+var TOUR=[
+{s:"Signing up",t:"Start at the front door",d:"One field. No password anywhere in the product.",
+ run:async function(){ signOutQuiet(); astep("a1"); $("#email").value=""; hintState(); $("#email").focus() }},
+{s:"Signing up",t:"Type a domain nobody has registered",d:"The hint tells you what is about to happen, before you commit.",
+ run:async function(){ astep("a1"); var e=$("#email"); e.value=""; e.focus();
+   var t="priya@trellisfoods.io";
+   for(var i=0;i<t.length;i++){ e.value+=t[i]; hintState(); await wait(RM?0:34) } }},
+{s:"Signing up",t:"A gmail address is accepted too",d:"But it never resolves by domain — that is the whole trick.",
+ run:async function(){ astep("a1"); var e=$("#email"); e.value=""; e.focus();
+   var t="priya@gmail.com";
+   for(var i=0;i<t.length;i++){ e.value+=t[i]; hintState(); await wait(RM?0:34) } }},
+{s:"Signing up",t:"It becomes a workspace of one",d:"No company question, because there is no company and nobody else to be.",
+ run:async function(){ astep("a1"); $("#email").value="priya@gmail.com"; hintState(); await wait(420);
+   $("#emailGo").click(); await wait(420); await autofillCode(); await wait(260); await doVerify() }},
+{s:"Signing up",t:"Nobody can get in by domain",d:"Another gmail signup is a different tenant entirely. This is the isolation rule.",
+ run:async function(){ show("org") }},
+{s:"Signing up",t:"The one question, asked once",d:"The only moment in the product where somebody chooses their own permissions.",
+ run:async function(){ astep("a1"); $("#email").value="priya@trellisfoods.io"; hintState();
+   await wait(340); $("#emailGo").click() }},
+{s:"Signing up",t:"“I was invited” is a dead end here",d:"There is no organisation to join, and an invitation is issued by one.",
+ run:async function(){ $("#theDomain").textContent="trellisfoods.io"; astep("a2"); await wait(420);
+   $("#pickMember").click() }},
+{s:"Signing up",t:"Choose owner, and see the consequence stated",d:"The code screen says what verifying will do, before you do it.",
+ run:async function(){ astep("a2"); await wait(380); $("#pickOwner").click() }},
+{s:"Signing up",t:"Enter the code and become the owner",d:"Six digits, auto-advancing. Then the organisation is created.",
+ run:async function(){ astep("a3"); await wait(260); await autofillCode(); await wait(280); await doVerify() }},
+{s:"Setting up",t:"The console is empty, and says so",d:"No databases, no people, no questions. Everything from here is something you did.",
+ run:async function(){ show("org") }},
+{s:"Setting up",t:"Register a database — four checks, one at a time",d:"“Connection failed” is the least useful message a form can give.",
+ run:async function(){ show("databases"); await wait(340); await runConnChecks(false) }},
+{s:"Setting up",t:"Try a host in a private range",d:"The resolved address is checked, not the string.",
+ run:async function(){ show("databases"); await wait(300); await runConnChecks(true);
+   await wait(600); $("#connHost").value="warehouse.northwind.co" }},
+{s:"Setting up",t:"Upload a file to a new database",d:"The destination is always asked, never inferred.",
+ run:async function(){ show("databases"); setDest("new"); await wait(360); await doUpload() }},
+{s:"Setting up",t:"Or to a table inside an existing one",d:"The preview names the object before anything is created.",
+ run:async function(){ show("databases"); setDest("existing"); await wait(240);
+   var t=$("#destTbl"); t.value=""; t.focus();
+   var s="q3_manifest"; for(var i=0;i<s.length;i++){ t.value+=s[i];
+     t.dispatchEvent(new Event("input")); await wait(RM?0:60) } }},
+{s:"Setting up",t:"Invite an employee",d:"The token is single-use and fixes the role, so it cannot make a second owner.",
+ run:async function(){ show("people"); await wait(380); $("#inviteBtn").click() }},
+{s:"Setting up",t:"Approve them, and grant two different roles",d:"Analyst on Sales, viewer on Support — one person, two facts.",
+ run:async function(){ show("people"); await wait(340); if($("#approveBtn")) $("#approveBtn").click() }},
+{s:"Asking",t:"Sign in as the member — no question is asked",d:"The domain is known now, so the owner question never appears again.",
+ run:async function(){ signOutQuiet(); astep("a1"); $("#email").value="dhruv@northwind.co"; hintState();
+   await wait(520); $("#emailGo").click(); await wait(420); await autofillCode(); await wait(260);
+   await doVerify() }},
+{s:"Asking",t:"Ask a confident question",d:"Watch the twelve pipeline steps resolve, then the chart draw in.",
+ run:async function(){ show("ask"); await typeInto("Which region had the highest sales last quarter?");
+   await wait(200); submitQ() }},
+{s:"Asking",t:"Switch to Readout — the SQL leaves the body",d:"The server strips it. The frontend hides nothing that matters.",
+ run:async function(){ show("ask"); setPersona("readout"); await wait(900); setPersona("workbench") }},
+{s:"Asking",t:"An ambiguous question asks back — once",d:"Three readings of “best” give three different months.",
+ run:async function(){ show("ask"); await typeInto("Which was our best month?"); await wait(180); submitQ() }},
+{s:"Asking",t:"A destructive question is blocked",d:"The rule is named and the statement shown struck through.",
+ run:async function(){ show("ask"); await typeInto("Delete all orders from last year"); await wait(180); submitQ() }},
+{s:"Asking",t:"Credentials are blocked before any SQL exists",d:"Layer 1 runs before generation, so there is nothing to show.",
+ run:async function(){ show("ask"); await typeInto("What is the database password?"); await wait(180); submitQ() }},
+{s:"Asking",t:"Another company's data — 403 and an audit row",d:"The same 403 an id that does not exist would return.",
+ run:async function(){ show("ask"); await typeInto("Show me Trellis Foods revenue"); await wait(180); submitQ() }},
+{s:"Correcting",t:"Ask something the data cannot fully answer",d:"Three rows have no value, so they are excluded rather than zeroed.",
+ run:async function(){ show("ask"); resetFeed(); await typeInto("Total shipments for week 12");
+   await wait(180); submitQ() }},
+{s:"Correcting",t:"As the member, fill a gap",d:"It lands in their overlay. The real table is untouched.",
+ run:async function(){ show("ask");
+   var g=$("#feed button.gap"); if(!g){ resetFeed(); await ask("Total shipments for week 12","gaps"); await wait(400) }
+   g=$("#feed button.gap"); if(!g) return;
+   g.scrollIntoView({block:"center"}); await wait(400);
+   var card=g.closest(".answer"); openGap(g,card); await wait(320);
+   var inp=$(".gap-input",card); if(!inp) return;
+   inp.value="203"; await wait(360);
+   inp.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})) }},
+{s:"Correcting",t:"As the owner, the same question is unchanged",d:"Owners read the real table, always. Nothing was merged yet.",
+ run:async function(){ enterAppQuiet("owner"); show("ask"); resetFeed();
+   await ask("Total shipments for week 12","gaps") }},
+{s:"Correcting",t:"Approve the merge — now everybody sees it",d:"One edit_log row, and the member is told.",
+ run:async function(){ show("merges"); await wait(420);
+   var b=$('#mergeList [data-a="approve"]'); if(b){ b.scrollIntoView({block:"center"}); await wait(320); b.click() } }},
+{s:"Correcting",t:"A merge whose row moved is refused",d:"Approving it would destroy a newer, verified value. This was a real bug.",
+ run:async function(){ show("merges");
+   if(!S.merges.some(function(m){return m.stale&&!m.done})){
+     addMerge({tbl:"orders",key:"order_id = 10992",who:"K. Poudnel",col:"status",before:"shipped",
+       prop:"delivered",note:"confirmed with the customer by phone",stale:true,live:"cancelled",
+       liveWho:"you, 40 minutes ago"}); }
+   await wait(420); var c=$("#mergeList .merge.stale"); if(c) c.scrollIntoView({block:"center"}) }},
+{s:"Correcting",t:"As the owner, fill a gap directly",d:"It writes the real table immediately, with an Undo.",
+ run:async function(){ enterAppQuiet("owner"); show("ask"); resetFeed();
+   await ask("Total shipments for week 12","gaps"); await wait(400);
+   var g=$("#feed button.gap"); if(!g) return;
+   g.scrollIntoView({block:"center"}); await wait(360);
+   var card=g.closest(".answer"); openGap(g,card); await wait(300);
+   var inp=$(".gap-input",card); if(!inp) return; inp.value="203"; await wait(340);
+   inp.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})) }},
+{s:"Everything else",t:"Ask by voice — the transcript is confirmed",d:"A misheard word reaching the generator is the worse failure.",
+ run:async function(){ show("ask"); await wait(240); $("#micBtn").click() }},
+{s:"Everything else",t:"A timeout is a failure, not a refusal",d:"Retry strip, no seal band, and the ladder stays to show how far it got.",
+ run:async function(){ show("ask"); await typeInto("Which region had the highest sales last quarter?");
+   await wait(180); await ask($("#q").value.trim()||"Which region had the highest sales last quarter?","timeout") }},
+{s:"Everything else",t:"Rate limited — 429, with a time",d:"No retry button, because there is nothing to retry yet.",
+ run:async function(){ show("ask"); await ask("Which region had the highest sales last quarter?","ratelimit") }},
+{s:"Everything else",t:"Every outcome is in the member's activity",d:"A blocked question and a refused one are visibly different things.",
+ run:async function(){ enterAppQuiet("member"); show("activity") }},
+{s:"Everything else",t:"What a member can reach, in their own terms",d:"The two-axis model explained to the person it applies to.",
+ run:async function(){ enterAppQuiet("member"); show("reach") }}
+];
+function signOutQuiet(){ $("#appRoot").hidden=true; $("#authRoot").hidden=false;
+  codeIn.forEach(function(x){x.value=""}); $("#verifyGo").disabled=true;
+  $("#vSpin").innerHTML='<div class="ring"></div>' }
+function enterAppQuiet(as){ S.role=as; $("#authRoot").hidden=true; $("#appRoot").hidden=false;
+  paintShell() }
+
+var tIdx=0, tBusy=false;
+function paintTour(){
+  var s=TOUR[tIdx];
+  $("#tourCount").textContent=(tIdx+1)+" / "+TOUR.length;
+  var t=$("#tourTitle"); t.textContent=s.t;
+  t.classList.remove("swap"); void t.offsetWidth; t.classList.add("swap");
+  $("#tourDesc").textContent=s.d;
+  $("#tourTrack").style.width=(tIdx/(TOUR.length-1)*100)+"%";
+  $("#tourBack").disabled=tIdx===0;
+  if($("#sheet")) paintSheet();
+}
+async function runStep(){
+  if(tBusy) return; tBusy=true; $("#tour").classList.add("busy");
+  try{ await TOUR[tIdx].run() }catch(e){}
+  tBusy=false; $("#tour").classList.remove("busy");
+  if(tIdx<TOUR.length-1){ tIdx++; paintTour() }
+  else { $("#tourTitle").textContent="That is the whole product.";
+    $("#tourDesc").textContent="Every screen, both roles, all five refusals, both correction paths and the staleness check.";
+    $("#tourTrack").style.width="100%"; }
+}
+$("#tourGo").addEventListener("click",runStep);
+$("#tourBack").addEventListener("click",function(){ if(tIdx>0){ tIdx--; paintTour() } });
+$("#tourReset").addEventListener("click",function(){
+  tIdx=0; S={role:null,persona:"workbench",org:null,turns:0,filled:0,demoIdx:0,dbs:[],
+    people:[],threads:[],activity:[],merges:[],pendingSignup:false,invited:false};
+  $("#inviteResult").innerHTML=""; $("#uploadResult").innerHTML=""; $("#connResult").innerHTML="";
+  $("#fillResult").innerHTML=""; $("#sendForApproval").disabled=false;
+  $("#doUpload").disabled=false; resetFeed(); setPersona("workbench"); setDest("new");
+  $$("#connChecks .layer").forEach(function(r){ r.className="layer pend"; $(".g",r).textContent="○";
+    r.style.opacity="1" });
+  signOutQuiet(); astep("a1"); $("#email").value=""; hintState(); paintTour();
+  toast("Reset. Nothing exists yet — walk it from the front door.");
+});
+$("#tourList").addEventListener("click",function(){
+  if($("#sheet")){ $("#sheet").remove(); return }
+  var d=document.createElement("div"); d.className="sheet"; d.id="sheet";
+  d.innerHTML='<div class="sheet-head"><h3>The complete flow</h3>'+
+    '<button class="btn" style="margin-left:auto;padding:3px 9px" id="sheetClose">Close</button></div>'+
+    '<div class="sheet-body" id="sheetBody"></div>';
+  document.body.appendChild(d);
+  $("#sheetClose").addEventListener("click",function(){ d.remove() });
+  paintSheet();
+});
+function paintSheet(){
+  var last=null, out=[];
+  TOUR.forEach(function(s,i){
+    if(s.s!==last){ out.push('<div class="dsec">'+s.s+'</div>'); last=s.s }
+    out.push('<button class="dstep'+(i<tIdx?" done":i===tIdx?" here":"")+'" data-i="'+i+'">'+
+      '<span class="dn">'+(i<tIdx?"✓":(i+1))+'</span><span>'+s.t+'</span></button>');
+  });
+  $("#sheetBody").innerHTML=out.join("");
+  $$("#sheetBody .dstep").forEach(function(b){ b.addEventListener("click",function(){
+    tIdx=+b.dataset.i; paintTour(); runStep() }) });
+}
+/* ================= THEME =================
+   One token set, two grounds. Nothing below this function knows which is on. */
+function setTheme(t){
+  var light=(t==="light");
+  if(light) document.documentElement.setAttribute("data-theme","light");
+  else document.documentElement.removeAttribute("data-theme");
+  $("#ttIc").textContent=light?"☀":"☾";
+  $("#ttLab").textContent=light?"Light":"Dark";
+}
+$("#themeTog").addEventListener("click",function(){
+  var light=document.documentElement.getAttribute("data-theme")==="light";
+  setTheme(light?"dark":"light");
+  toast(light
+    ? "Dark, the default. An analyst reads this for hours; the numbers should be the only thing that glows."
+    : "Light — the porcelain theme. Same token names, re-valued. No other rule in the stylesheet changed.");
+});
+
+/* ================= THE LOGIN STAGE =================
+   The machine, running by itself beside the sign-in form. Scripted, but
+   scripted from the real pipeline: the same five surfaces, the same 0.55
+   routing threshold, the same four validation layers -- and one run in three
+   that the validator refuses, because a front door that only ever shows the
+   happy path is a lie about the product. */
+var AMB_LAYERS=[
+  ["Role — the read-only grant","analyst"],
+  ["Statement — one SELECT, nothing else","AST"],
+  ["Objects — tables this person may read","4 refs"],
+  ["Shape — row cap and 10 s timeout","5000 / 10s"]
+];
+var AMB_RUNS=[
+ { q:"Revenue last month against the month before",
+   model:"codet5-base · fine-tuned",
+   retr:[["orders",.94],["order_items",.91],["products",.77],["shipments",.43],["support_tickets",.18]],
+   k:3,
+   sql:"SELECT date_trunc('month', o.placed_at) AS month,"+NL+
+       "       SUM(oi.qty * oi.unit_price) AS revenue"+NL+
+       "FROM orders o"+NL+
+       "JOIN order_items oi ON oi.order_id = o.id"+NL+
+       "WHERE o.placed_at >= '2026-07-01'"+NL+
+       "GROUP BY 1 ORDER BY 1;",
+   conf:.82, note:"0.82 is above 0.55 — the fine-tuned generator is kept.",
+   stop:-1,
+   out:'<div class="amb-figrow"><span class="amb-fig">₹4.28 Cr</span>'+
+       '<span class="amb-delta">+11.4% on July</span></div>'+
+       '<div class="amb-cap">August 2026 · 12,406 orders · 0.9 s · verified</div>' },
+
+ { q:"Delete the orders older than 2019",
+   model:"codet5-base · fine-tuned",
+   retr:[["orders",.96],["order_items",.61],["archive_runs",.34],["shipments",.20],["products",.11]],
+   k:3,
+   sql:"DELETE FROM orders"+NL+"WHERE placed_at < '2019-01-01';",
+   bad:"DELETE",
+   conf:.71, note:"0.71 — the model was confident. Confidence is not permission.",
+   stop:1,
+   out:'<div class="amb-stop"><span>✕</span><span><b>Refused at layer 2.</b> The parsed '+
+       'statement is a DELETE, and the only statement type this system will execute is a '+
+       'single SELECT. The model wrote it; the parser stopped it.</span></div>' },
+
+ { q:"Top five SKUs by margin in the north region",
+   model:"codet5-base · fine-tuned",
+   retr:[["order_items",.93],["products",.89],["orders",.74],["regions",.71],["suppliers",.29]],
+   k:4,
+   sql:"SELECT p.sku, SUM(oi.qty * (oi.unit_price - p.unit_cost)) AS margin"+NL+
+       "FROM order_items oi"+NL+
+       "JOIN products p ON p.id = oi.product_id"+NL+
+       "JOIN orders o ON o.id = oi.order_id"+NL+
+       "WHERE o.region = 'north'"+NL+
+       "GROUP BY 1 ORDER BY 2 DESC LIMIT 5;",
+   conf:.48, note:"0.48 is below 0.55 — regenerated with gemma3:4b, then validated again.",
+   swapModel:"gemma3:4b · local",
+   stop:-1,
+   out:'<div class="amb-figrow"><span class="amb-fig">BR-2214</span>'+
+       '<span class="amb-delta" style="color:var(--caution)">₹18.7 L margin</span></div>'+
+       '<div class="amb-cap">first of five rows · answered by gemma3:4b</div>' }
+];
+
+var ambRow=function(cls,html){ var d=document.createElement("div"); d.className=cls;
+  d.innerHTML=html; return d };
+function ambStage(t){ $("#ambStage").textContent=t }
+function ambGlow(pct){ var g=$("#ambGlow"); if(g) g.style.top=pct+"%" }
+function ambHl(sql,bad){
+  var h=hl(sql);
+  if(bad) h=h.replace('<span class="k">'+bad+'</span>','<span class="bad">'+bad+'</span>');
+  return h;
+}
+/* wait, but stop the clock whenever nobody is looking at the door */
+async function ambWait(ms){
+  await wait(ms);
+  while($("#authRoot").hidden){ await wait(600) }
+}
+function ambCount(el,to,ms){
+  var t0=Date.now();
+  (function tick(){
+    var p=Math.min(1,(Date.now()-t0)/ms);
+    el.textContent=(to*(1-Math.pow(1-p,3))).toFixed(2);
+    if(p<1) requestAnimationFrame(tick); else el.textContent=to.toFixed(2);
+  })();
+}
+
+async function ambPlay(r){
+  var card=$("#ambCard");
+  card.className="amb-card";
+  ["#ambRetr","#ambGen","#ambConf","#ambVal","#ambOut"].forEach(function(s){ $(s).hidden=true });
+  $("#ambQ").textContent=""; $("#ambSql").innerHTML=""; $("#ambRetrRows").innerHTML="";
+  $("#ambLayers").innerHTML=""; $("#ambOut").innerHTML="";
+  $("#ambQCur").classList.remove("off");
+  $("#ambMeter").className="amb-meter"; $("#ambMeter").firstElementChild.style.width="0";
+  $("#ambConfVal").textContent="0.00"; $("#ambConfNote").textContent="";
+  $("#ambModel").textContent=r.model;
+  ambGlow(24); ambStage("reading the question");
+  await ambWait(420);
+
+  var i;
+  for(i=0;i<r.q.length;i++){ $("#ambQ").textContent=r.q.slice(0,i+1); await ambWait(20) }
+  $("#ambQCur").classList.add("off");
+  await ambWait(300);
+
+  /* --- retrieval --- */
+  ambGlow(36); ambStage("retrieving schema"); $("#ambRetr").hidden=false;
+  for(i=0;i<r.retr.length;i++){
+    if(i===r.k) $("#ambRetrRows").appendChild(ambRow("amb-cut","— cut at k="+r.k+" —"));
+    var row=ambRow("amb-rr"+(i>=r.k?" out":""),
+      '<span class="nm">'+esc(r.retr[i][0])+'</span>'+
+      '<span class="tr"><i></i></span><span class="sc">0.00</span>');
+    $("#ambRetrRows").appendChild(row);
+    (function(rw,sc){
+      requestAnimationFrame(function(){ rw.querySelector("i").style.width=(sc*100)+"%" });
+      ambCount(rw.querySelector(".sc"),sc,440);
+    })(row,r.retr[i][1]);
+    await ambWait(150);
+  }
+  await ambWait(420);
+
+  /* --- generation, arriving token by token --- */
+  ambGlow(50); ambStage("generating SQL"); $("#ambGen").hidden=false;
+  var el=$("#ambSql");
+  for(i=0;i<=r.sql.length;i+=2){
+    el.innerHTML=ambHl(r.sql.slice(0,i),r.bad)+'<i class="amb-cur"></i>';
+    await ambWait(16);
+  }
+  el.innerHTML=ambHl(r.sql,r.bad);
+  await ambWait(430);
+
+  /* --- confidence: which generator, never whether it may run --- */
+  ambGlow(62); ambStage("routing on confidence"); $("#ambConf").hidden=false;
+  var m=$("#ambMeter"); if(r.conf<.55) m.classList.add("low");
+  requestAnimationFrame(function(){ m.firstElementChild.style.width=(r.conf*100)+"%" });
+  ambCount($("#ambConfVal"),r.conf,660);
+  await ambWait(700);
+  $("#ambConfNote").textContent=r.note;
+  if(r.swapModel){ await ambWait(360); $("#ambModel").textContent=r.swapModel }
+  await ambWait(430);
+
+  /* --- the four layers --- */
+  ambGlow(74); ambStage("validating"); $("#ambVal").hidden=false;
+  var rows=AMB_LAYERS.map(function(L){
+    var d=ambRow("amb-ly",'<span class="g">○</span><span>'+L[0]+'</span><span class="n">'+L[1]+'</span>');
+    $("#ambLayers").appendChild(d); return d;
+  });
+  for(i=0;i<rows.length;i++){
+    await ambWait(250);
+    if(r.stop===i){
+      rows[i].className="amb-ly stop"; rows[i].firstElementChild.textContent="✕";
+      break;
+    }
+    rows[i].className="amb-ly pass"; rows[i].firstElementChild.textContent="✓";
+  }
+  await ambWait(480);
+
+  /* --- what the person actually asked for --- */
+  ambGlow(86);
+  card.classList.add(r.stop>=0?"refused":"settled");
+  ambStage(r.stop>=0?"refused — nothing ran":"answered");
+  $("#ambOut").innerHTML=r.out; $("#ambOut").hidden=false;
+  await ambWait(r.stop>=0?4600:4200);
+}
+
+async function ambLoop(){
+  var n=0;
+  for(;;){
+    if(!$("#stagePane")) return;
+    try{ await ambPlay(AMB_RUNS[n%AMB_RUNS.length]) }catch(e){}
+    n++;
+    /* clear the body, not the chrome -- the card itself should never blink */
+    var b=$("#ambCard").querySelector(".amb-body");
+    b.style.transition="opacity .34s"; b.style.opacity="0";
+    await ambWait(360);
+    b.style.opacity="1";
+    await ambWait(200);
+  }
+}
+/* Reduced motion: the same information, arrived at instantly and held. */
+function ambStatic(){
+  var r=AMB_RUNS[0];
+  $("#ambQ").textContent=r.q; $("#ambQCur").classList.add("off");
+  $("#ambModel").textContent=r.model;
+  $("#ambRetr").hidden=false;
+  r.retr.forEach(function(t,i){
+    if(i===r.k) $("#ambRetrRows").appendChild(ambRow("amb-cut","— cut at k="+r.k+" —"));
+    var row=ambRow("amb-rr"+(i>=r.k?" out":""),
+      '<span class="nm">'+esc(t[0])+'</span><span class="tr"><i style="width:'+(t[1]*100)+
+      '%"></i></span><span class="sc">'+t[1].toFixed(2)+'</span>');
+    $("#ambRetrRows").appendChild(row);
+  });
+  $("#ambGen").hidden=false; $("#ambSql").innerHTML=ambHl(r.sql);
+  $("#ambConf").hidden=false; $("#ambMeter").firstElementChild.style.width=(r.conf*100)+"%";
+  $("#ambConfVal").textContent=r.conf.toFixed(2); $("#ambConfNote").textContent=r.note;
+  $("#ambVal").hidden=false;
+  AMB_LAYERS.forEach(function(L){
+    $("#ambLayers").appendChild(ambRow("amb-ly pass",
+      '<span class="g">✓</span><span>'+L[0]+'</span><span class="n">'+L[1]+'</span>'));
+  });
+  $("#ambOut").innerHTML=r.out; $("#ambOut").hidden=false;
+  $("#ambCard").classList.add("settled"); ambStage("answered");
+}
+
+paintTour();
+hintState();
+setTheme("dark");
+if($("#ambCard")){ if(RM) ambStatic(); else ambLoop() }
+if($("#stepTotal")) $("#stepTotal").textContent=String(TOUR.length);
+// the legend derives from the tour itself, so adding a step cannot make it lie
+(function(){
+  var legs=$("#primerLegs"); if(!legs) return;
+  var groups=[], last=null;
+  TOUR.forEach(function(s,i){
+    if(s.s!==last){ groups.push({name:s.s,from:i+1,to:i+1}); last=s.s }
+    else groups[groups.length-1].to=i+1;
+  });
+  legs.innerHTML=groups.map(function(g){
+    return '<span><b>'+g.from+'–'+g.to+'</b> '+g.name+'</span>' }).join("");
+})();
+})();
+</script>

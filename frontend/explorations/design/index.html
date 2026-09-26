@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpeakQL - Style Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<style>
+body{background:var(--surface)}
+.sg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--s4)}
+.state-strip{display:flex;flex-direction:column;gap:6px}
+.state-strip .lab{font-size:var(--t-micro);color:var(--text-faint);width:70px;display:inline-block}
+</style>
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.9 18a2 2 0 001.7 3h16.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 2a5 5 0 015 5c0 3.5-5 10-5 10s-5-6.5-5-10a5 5 0 015-5z"/><circle cx="12" cy="7" r="2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7.5 10.5L12 15l4.5-4.5M4 20h16"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 114 2c-.9.7-1.5 1.2-1.5 2.3M12 17h.01"/></symbol>
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 15V9M8 18V6M12 20V4M16 18V6M20 15V9"/></symbol>
+</svg>
+
+<div class="sg">
+  <header style="margin-bottom:var(--s7)">
+    <div class="brand"><div class="brand-mark"><svg class="i"><use href="#i-logo"/></svg></div><div class="brand-name">SpeakQL</div></div>
+    <h1 class="t-h1" style="margin-top:var(--s4)">Style Guide</h1>
+    <p class="muted">Every token, every component, every state. If it is not here, it does not exist yet.</p>
+  </header>
+
+  <section>
+    <p class="sg-h">Type scale</p>
+    <div class="stack" style="gap:var(--s3)">
+      <div class="answer-headline">West, at 482,000</div>
+      <div class="t-h1">Page title -- t-h1 20px</div>
+      <div class="t-h2">Panel heading -- t-h2 15px</div>
+      <div>Body text -- t-body 14px, the default</div>
+      <div class="t-small muted">Small text -- t-small 12.5px</div>
+      <div class="t-micro">Micro label -- t-micro 11px uppercase</div>
+      <div class="mono t-small">SELECT * FROM orders -- mono, JetBrains Mono</div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Colour</p>
+    <div class="sg-row"><span class="sg-lab">Chart</span>
+      <div class="swatches" style="flex:1">
+        <div class="sw-chip"><div class="fill" style="background:var(--chart-1)"></div><div class="meta">chart-1<b>#B5D4F4</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--chart-2)"></div><div class="meta">chart-2<b>#9FE1CB</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--chart-3)"></div><div class="meta">chart-3<b>#F5C4B3</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--chart-4)"></div><div class="meta">chart-4<b>#F4C0D1</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--chart-5)"></div><div class="meta">chart-5<b>#CECBF6</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--chart-6)"></div><div class="meta">chart-6<b>#FAC775</b></div></div>
+      </div>
+    </div>
+    <div class="sg-row"><span class="sg-lab">Semantic</span>
+      <div class="swatches" style="flex:1">
+        <div class="sw-chip"><div class="fill" style="background:var(--accent)"></div><div class="meta">accent<b>#2F6FBF</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--success)"></div><div class="meta">success<b>#1D7A5E</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--warn)"></div><div class="meta">warn<b>#8A6212</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--danger)"></div><div class="meta">danger<b>#C0392F</b></div></div>
+      </div>
+    </div>
+    <div class="sg-row"><span class="sg-lab">Surface</span>
+      <div class="swatches" style="flex:1">
+        <div class="sw-chip"><div class="fill" style="background:var(--paper)"></div><div class="meta">paper<b>#FAFAF8</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--surface)"></div><div class="meta">surface<b>#FFFFFF</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--surface-alt)"></div><div class="meta">surface-alt<b>#F7F6F2</b></div></div>
+        <div class="sw-chip"><div class="fill" style="background:var(--surface-sunk)"></div><div class="meta">surface-sunk<b>#F1EFE9</b></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Buttons</p>
+    <div class="sg-grid">
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Primary</p>
+        <button class="btn">Default</button>
+        <button class="btn" style="filter:brightness(1.07)">Hover (forced)</button>
+        <button class="btn" style="outline:2px solid var(--accent);outline-offset:2px">Focus (forced)</button>
+        <button class="btn" style="transform:scale(.99)">Active (forced)</button>
+        <button class="btn" disabled>Disabled</button>
+      </div>
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Ghost</p>
+        <button class="btn btn-ghost">Default</button>
+        <button class="btn btn-ghost" style="background:var(--surface-alt)">Hover (forced)</button>
+        <button class="btn btn-ghost" style="outline:2px solid var(--accent);outline-offset:2px">Focus (forced)</button>
+        <button class="btn btn-ghost" disabled>Disabled</button>
+      </div>
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Mini pill</p>
+        <button class="mini">Default</button>
+        <button class="mini" style="border-color:var(--accent);color:var(--accent)">Hover (forced)</button>
+        <button class="mini" disabled>Disabled</button>
+      </div>
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Chart-type pill</p>
+        <span class="pill-toggle">
+          <button class="mini" aria-pressed="true">Bar (on)</button>
+          <button class="mini" aria-pressed="false">Line</button>
+        </span>
+      </div>
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Follow-up chip</p>
+        <button class="chip">Compare to last year</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Inputs</p>
+    <div class="sg-grid" style="max-width:640px">
+      <div class="stack">
+        <p class="t-micro">Text input</p>
+        <label class="field"><span class="field-label">Default</span><input class="input" placeholder="name@company.com"></label>
+        <label class="field"><span class="field-label">Focus (forced)</span><input class="input" style="border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)" value="garv@northwind.com"></label>
+        <label class="field"><span class="field-label">Disabled</span><input class="input" disabled value="locked"></label>
+        <p class="err show">Use your work email. Personal domains can't be matched to a company workspace.</p>
+      </div>
+      <div class="stack">
+        <p class="t-micro">OTP row (grid, holds at 360px)</p>
+        <div class="otp-row" style="max-width:280px">
+          <input class="otp filled" value="4" readonly><input class="otp filled" value="8" readonly>
+          <input class="otp" value="1" readonly><input class="otp" readonly><input class="otp" readonly><input class="otp" readonly>
+        </div>
+      </div>
+      <div class="stack">
+        <p class="t-micro">Toggle switch</p>
+        <div class="row" style="gap:var(--s4)">
+          <button class="sw" role="switch" aria-checked="false"></button>
+          <button class="sw" role="switch" aria-checked="true"></button>
+          <button class="sw" role="switch" aria-checked="true" disabled></button>
+        </div>
+      </div>
+      <div class="stack">
+        <p class="t-micro">Segmented control (Simple / Analyst)</p>
+        <div class="seg"><button aria-pressed="true">Simple</button><button aria-pressed="false">Analyst</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Tags &amp; status</p>
+    <div class="row wrap" style="gap:var(--s2)">
+      <span class="tag">18 tables</span>
+      <span class="tag tag-ok">Connected</span>
+      <span class="tag tag-wait">Awaiting approval</span>
+      <span class="tag tag-bad">Rejected</span>
+      <span class="route">local &middot; 412ms</span>
+      <span class="route remote">fallback &middot; 1840ms</span>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Thinking rail</p>
+    <div class="row wrap" style="gap:var(--s6);align-items:flex-start">
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">In progress</p>
+        <div class="exchange live" style="min-height:70px">
+          <span class="node done" style="top:6px"></span>
+          <span class="node done" style="top:30px"></span>
+          <span class="node" style="top:54px"></span>
+          <p class="t-small muted" style="padding-top:4px">Executing query&hellip;</p>
+        </div>
+      </div>
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Settled (answer landed)</p>
+        <div class="exchange" style="min-height:50px">
+          <span class="node done" style="top:6px"></span>
+          <span class="node done" style="top:30px"></span>
+          <p class="t-small">West, at 482,000</p>
+        </div>
+      </div>
+      <div class="stack" style="gap:var(--s2)">
+        <p class="t-micro">Stopped (blocked)</p>
+        <div class="exchange stopped" style="min-height:50px">
+          <span class="node done" style="top:6px"></span>
+          <span class="node fail" style="top:30px"></span>
+          <p class="t-small" style="color:var(--danger)">Query blocked at the validator</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Stage trace</p>
+    <div class="trace">
+      <span class="stage done"><span class="tick">&check;</span>Schema retrieved</span>
+      <span class="stage done"><span class="tick">&check;</span>SQL generated</span>
+      <span class="stage run"><span class="spin"></span>Validated read-only</span>
+      <span class="stage"><span class="tick">o</span>Executed</span>
+      <span class="stage fail"><span class="tick">&times;</span>Chart ready</span>
+    </div>
+    <p class="t-micro" style="margin-top:var(--s3)">Simple mode replaces the trace with:</p>
+    <div class="working"><span class="spin"></span><span>Working on it&hellip;</span></div>
+  </section>
+
+  <section>
+    <p class="sg-h">Confidence -- read as</p>
+    <div class="card" style="max-width:520px">
+      <div class="readas"><svg class="i"><use href="#i-info"/></svg><div><b>Read as:</b> Total sales by region, Q4 2025 &middot; confidence 94%</div></div>
+    </div>
+    <div class="card" style="max-width:520px;margin-top:var(--s3)">
+      <div class="readas low"><svg class="i"><use href="#i-alert"/></svg>
+        <div><b>Read as:</b> Highest total revenue by month &middot; confidence 61%
+          <div class="readas-actions"><button class="mini">That's right</button><button class="mini">Not what I meant</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Caveat &amp; blocked</p>
+    <div class="card" style="max-width:520px;padding:var(--s3)">
+      <div class="caveat" style="margin:0"><svg class="i"><use href="#i-alert"/></svg><div><b>Worth checking.</b> Refunds are not subtracted here, so these figures are gross rather than net.</div></div>
+    </div>
+    <div class="card card-blocked edge" style="max-width:520px;margin-top:var(--s3)">
+      <span class="edge-ico"><svg class="i"><use href="#i-shield"/></svg></span>
+      <div><h3>Query blocked at the validator</h3><p>The generated statement was <code>DELETE FROM orders</code>. Only a single read-only SELECT is allowed.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Table</p>
+    <div class="panel" style="max-width:420px">
+      <table>
+        <tr><th>Region</th><th class="num">Sales</th></tr>
+        <tr><td>West</td><td class="num">482,000</td></tr>
+        <tr><td>North</td><td class="num">355,000</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="sg-h">Toast</p>
+    <div class="toast show" style="position:static;display:inline-flex;transform:none">Interpretation confirmed</div>
+  </section>
+</div>
+</body>
+</html>

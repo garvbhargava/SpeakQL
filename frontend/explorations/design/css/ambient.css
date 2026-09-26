@@ -1,0 +1,18 @@
+/* Ambient field — two fixed layers behind everything.
+   Shows on auth screens and behind the chat scroll area only.
+   Cards, panels, tables and the sidebar sit on solid surfaces, never on the gradient. */
+.ambient{position:fixed;inset:0;z-index:-2;background:var(--paper);overflow:hidden}
+.ambient i{position:absolute;display:block;border-radius:50%;filter:blur(72px);opacity:.34}
+.ambient i:nth-child(1){width:46vw;height:46vw;left:-8vw;top:-10vw;background:var(--chart-1);animation:drift1 64s var(--ease) infinite alternate}
+.ambient i:nth-child(2){width:38vw;height:38vw;right:-6vw;top:6vw;background:var(--chart-2);animation:drift2 78s var(--ease) infinite alternate}
+.ambient i:nth-child(3){width:42vw;height:42vw;left:24vw;bottom:-16vw;background:var(--chart-4);animation:drift3 88s var(--ease) infinite alternate}
+
+@keyframes drift1{to{transform:translate3d(6vw,4vw,0) scale(1.12)}}
+@keyframes drift2{to{transform:translate3d(-5vw,7vw,0) scale(1.08)}}
+@keyframes drift3{to{transform:translate3d(4vw,-6vw,0) scale(1.15)}}
+
+/* fine grain so the gradient never looks like plastic */
+.grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+@media (prefers-reduced-motion:reduce){.ambient i{animation:none}}
