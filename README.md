@@ -15,7 +15,7 @@
 `Backend` · [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) · [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) · [`main`](https://github.com/garvbhargava/SpeakQL/tree/main)
 
 *This file is the Backend branch's own README. The project overview for every
-branch is [the README at the root](../README.md).*
+branch is [the README on `main`](https://github.com/garvbhargava/SpeakQL/tree/main).*
 
 </div>
 
@@ -329,7 +329,7 @@ Read that carefully, because three things in it are easy to overstate:
 
 ```bash
 git clone -b Backend https://github.com/garvbhargava/SpeakQL.git
-cd SpeakQL/backend
+cd SpeakQL
 
 cp .env.example .env          # then set SECRET_KEY
 make up                       # postgres + api
@@ -671,11 +671,11 @@ missing values. `21_seed.sql` raises if those gaps go missing.
 
 ## Project structure
 
-Everything backend lives in this folder. The repository root holds only the
-combined README and the git configuration.
+Everything backend lives at the top of this branch. On `Full-Stack` the same
+files sit in `backend/`, next to `frontend/`.
 
 ```
-backend/
+SpeakQL/        (the Backend branch)
 ├── app/        main · config · deps · rbac · object_access · ratelimit · mailer
 ├── api/        routes_ask · routes_org · routes_connections · routes_datasets
 │               routes_merges · routes_misc · schemas.py (the API contract)
@@ -697,6 +697,8 @@ backend/
 │               test_permissions · test_privileges
 ├── .dockerignore
 ├── .env.example
+├── .gitattributes
+├── .gitignore
 ├── docker-compose.yml
 ├── Dockerfile
 ├── Makefile
