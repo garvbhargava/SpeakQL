@@ -30,7 +30,6 @@ branch is [the README at the root](../README.md).*
 - [What is real and what is mocked](#what-is-real-and-what-is-mocked)
 - [Roadmap](#roadmap)
 - [Branches](#branches)
-- [Team](#team)
 
 ---
 
@@ -224,21 +223,6 @@ demonstration.
 | [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | **This branch** — the interface |
 | [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) | Both, wired together |
 | `documentation` | Backend Plan · Complete Logic · Frontend Specification · Build Plan |
-
----
-
-## Team
-
-**Minor Project · MCA (Artificial Intelligence and Machine Learning)**
-School of Computer Science, UPES Dehradun
-
-| Name | Roll |
-|---|---|
-| Garv Bhargava | 590020664 |
-| Dhruv Chhatrawal | 590028180 |
-| Kritant Poudnel | — |
-
-**Mentor:** Mr. Pankaj Dadure
 
 ---
 
