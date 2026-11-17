@@ -4,8 +4,9 @@
 
 **A natural-language analytics copilot for a company's own warehouse.**
 
-Ask a question in plain English. Get back a number, a chart, an explanation,
-and the validated read-only SQL that produced it.
+Ask a question in plain English. Get back a number, a chart, and an
+explanation naming the columns it came from. The validated read-only SQL
+behind it is logged for measurement, not shown.
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -42,8 +43,10 @@ for routine reporting. Each ad-hoc request costs an analyst 2–4 hours and wait
 SpeakQL removes that queue for routine questions. A person types what they want
 to know; the system finds the tables the question is about, writes the SQL,
 refuses anything that is not a single read-only `SELECT`, runs it under a
-database account that can only read, and answers with the number, a chart, a
-plain-English explanation naming the columns it came from, and the SQL itself.
+database account that can only read, and answers with the number, a chart and
+a plain-English explanation naming the columns it came from. The SQL is kept in
+the query log, where accuracy is measured, and is not shown to the person
+asking.
 
 When it cannot answer, it says so. When a question is ambiguous, it asks back
 once. When the data is short, it marks the missing cells and lets the right
@@ -69,13 +72,13 @@ person fill them where they stand.
  AST validation ─────── sqlglot, never a model ──────────────► single read-only SELECT?
     │
     ▼
- routing ────────────── confidence ≥ 0.55 keep · else escalate and validate again
+ routing ────────────── ≥ 0.63 keep · 0.47–0.63 ask back once · below: Gemma, validated again
     │
     ▼
  execution ──────────── read-only role · read-only transaction · 10 s timeout
     │
     ▼
- answer · chart · explanation · SQL        and one query_log row, on every path
+ answer · chart · explanation              and one query_log row, on every path
 ```
 
 Two models are fine-tuned in-house, on a CPU, and **measured rather than
@@ -158,7 +161,7 @@ SpeakQL/
 | [`Backend`](https://github.com/garvbhargava/SpeakQL/tree/Backend) | API, database layer, the four safety layers, model interfaces | [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md) |
 | [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | The interface — every screen, both roles, all five response modes | [`frontend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Frontend/frontend/README.md) |
 | [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) | Backend and frontend wired together, one `docker compose up` | root and both folders |
-| `documentation` | The four specification PDFs | — |
+| [`Documents`](https://github.com/garvbhargava/SpeakQL/tree/Documents) | The specification PDFs; Backend Specification v6.1 is the one to build from | [Documentation](#documentation) |
 
 Each branch is **self-contained**: check out `Backend` and you have a complete,
 runnable API with its own tests; check out `Frontend` and you have the complete
@@ -207,10 +210,10 @@ presentation; weeks 8–10 are the end-term.
 
 | Branch | State |
 |---|---|
-| `Backend` | ✅ **Build weeks 1–7 complete, verified on Postgres 15** — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 218 tests, and both models trained in-house on CPU. Measured numbers in [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md#the-two-models) |
-| `Frontend` | ✅ **The interface, in one file** — eight screens, both roles, all five response modes, a 34-step walkthrough, dark by default. Awaiting review before it is wired |
-| `Full-Stack` | ⏳ After the frontend is approved |
-| `documentation` | ⏳ Added when the project is finished |
+| `Backend` | ✅ **Build weeks 1–7 complete, verified on Postgres 15** (built to Revision 5; what moves it to v6.1 is listed in §15.2 of the Backend Specification) — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 218 tests, and both models trained in-house on CPU. Measured numbers in [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md#the-two-models) |
+| `Frontend` | ✅ **The approved design, in one file** — eight screens, both roles, all five response modes, a 34-step walkthrough, dark by default. ⏳ The real interface, in React, Vite and Tailwind and connected to the API, is being built from it |
+| `Full-Stack` | ⏳ Once the React interface is connected: the backend and the interface together, one `docker compose up` |
+| `Documents` | ✅ **Backend Specification v6.1** (17 November 2026) and the documents aligned to it |
 
 **Deferred to the end-term by design:** SSE streaming, voice input, export, the
 evaluation harness, the ablation table and the confidence-threshold sweep.
@@ -230,14 +233,20 @@ What is the database password?
 
 ## Documentation
 
-Four specification documents, added to the `documentation` branch at the end:
+The `Documents` branch holds the specifications. **Build from Backend
+Specification v6.1**; where any other document disagrees with it, v6.1 is
+right.
 
-| Document | What it covers |
-|---|---|
-| **Backend Plan** · Revision 5 | Architecture, database, safety layers, API contract, build order |
-| **Complete Logic** | How every part of the system decides what it decides, with worked traces |
-| **Frontend Specification** | The design system, every screen, and a 132-case test matrix |
-| **Build Plan** | Weeks 1–7 serialised for one builder, with the critical path and cut order |
+| Document | What it covers | Status |
+|---|---|---|
+| **Backend Specification v6.1** | Architecture, roles, the 12-step pipeline, safety layers, corrections, the API contract (§10), the seeded warehouses (§11.4), tests and the demo script (§14), build order and the work list from the Backend branch (§15) | Source of truth, 17 November 2026. Its appendix records why each change from v6 was made and how it was tested |
+| **Complete Logic** | How every part of the system decides what it decides, with six worked traces and the viva answers | Rewritten for v6.1 |
+| **Frontend Specification** | The design system, every screen, and the test matrix | Opens with a v6.1 change list; every page it touches is marked |
+| **Backend Plan** · Revision 5 | The design the Backend branch was built to | Superseded by v6.1, kept as a record |
+
+Reading order: Complete Logic first, then the Backend Specification for
+backend work or the Frontend Specification (change list first) for interface
+work.
 
 ---
 
