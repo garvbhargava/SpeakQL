@@ -38,7 +38,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 WAREHOUSE = "harbor_dw"
-SHIPMENT = 84112          # a row with a real unit count in the seed
+# A Harbor shipment with a real unit count, looked up when the `people`
+# fixture starts: Harbor's warehouse is generated from its own seed (§11.4),
+# so no shipment id is fixed there.
+SHIPMENT: int | None = None
 DOMAIN = "corrections-test.example"
 
 
@@ -203,6 +206,8 @@ def people(stack):
             for role in ("owner", "member", "viewer")
         }
 
+    global SHIPMENT  # noqa: PLW0603 - read by every helper and test below
+    SHIPMENT = _a_shipment_with_units(app, ids["connection"])
     before = _units(app, ids["connection"])
 
     yield {"ids": ids, "tokens": tokens, "before": before}
@@ -217,6 +222,16 @@ def _connection(app, connection_id: int):
     from db.entities import Connection  # noqa: PLC0415
     with app.state.sessions() as session:
         return session.get(Connection, connection_id)
+
+
+def _a_shipment_with_units(app, connection_id: int) -> int:
+    engine = app.state.engines.tenants.read(_connection(app, connection_id))
+    with engine.connect() as conn:
+        shipment = conn.execute(text(
+            "SELECT min(shipment_id) FROM public.shipments WHERE units IS NOT NULL"
+        )).scalar_one()
+    assert shipment is not None, "harbor_dw has no shipment with units"
+    return shipment
 
 
 def _units(app, connection_id: int):

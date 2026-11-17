@@ -55,7 +55,7 @@ def _rows_for_stage(stage: int, limit: int | None) -> tuple[list[dict], list[dic
 
 
 def _warehouse_columns():
-    """The six tables and five foreign keys of the seeded warehouse.
+    """Every table and foreign key of the seeded warehouse (18 tables, §11.4).
 
     Taken from the registry rather than typed out again: what the model is
     trained on is what the API will send it.

@@ -1,11 +1,17 @@
--- SpeakQL · a customer warehouse (Backend Plan §5)
+-- SpeakQL · a customer warehouse (§11.4)
 --
 -- Run once per tenant database by scripts/bootstrap.sh, against northwind_dw
 -- and again against harbor_dw. Two tenants, deliberately: isolation cannot be
 -- tested against one.
 --
--- The schema is the 18-table warehouse the documents describe, reduced here to
--- the tables the pipeline actually reaches. More arrive with file ingestion.
+-- The 18 tables of §11.4, column for column. The six the pipeline was first
+-- built on keep their names and columns; twelve are added, and the four
+-- columns added to the six are nullable, so every existing query still runs.
+-- Every table has a single-column primary key, so every table is correctable.
+-- The rows come from scripts/seed_warehouse.py, which bootstrap runs next.
+--
+-- Safe to run again on an existing volume: tables are created only if they
+-- are absent, and the added columns and their foreign keys only if missing.
 
 \set ON_ERROR_STOP on
 
@@ -61,12 +67,154 @@ CREATE TABLE IF NOT EXISTS shipments (
     units        INTEGER NULL
 );
 
+-- ------------------------------------------------- added in v6.1 (§11.4) ----
+
+CREATE TABLE IF NOT EXISTS categories (
+    category_id  SERIAL PRIMARY KEY,
+    name         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS suppliers (
+    supplier_id  SERIAL PRIMARY KEY,
+    name         TEXT NOT NULL,
+    country      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS employees (
+    employee_id  SERIAL PRIMARY KEY,
+    name         TEXT    NOT NULL,
+    title        TEXT    NOT NULL,
+    region_id    INTEGER NOT NULL REFERENCES regions (region_id),
+    hired_on     DATE    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS warehouses (
+    warehouse_id SERIAL PRIMARY KEY,
+    name         TEXT    NOT NULL,
+    city         TEXT    NOT NULL,
+    region_id    INTEGER NOT NULL REFERENCES regions (region_id)
+);
+
+CREATE TABLE IF NOT EXISTS sales_targets (
+    target_id     SERIAL PRIMARY KEY,
+    region_id     INTEGER        NOT NULL REFERENCES regions (region_id),
+    year          INTEGER        NOT NULL,
+    quarter       INTEGER        NOT NULL,
+    target_amount NUMERIC(12, 2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS promotions (
+    promotion_id SERIAL PRIMARY KEY,
+    name         TEXT          NOT NULL,
+    starts_on    DATE          NOT NULL,
+    ends_on      DATE          NOT NULL,
+    discount_pct NUMERIC(5, 2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory (
+    inventory_id  SERIAL PRIMARY KEY,
+    warehouse_id  INTEGER NOT NULL REFERENCES warehouses (warehouse_id),
+    product_id    INTEGER NOT NULL REFERENCES products (product_id),
+    on_hand       INTEGER NOT NULL,
+    reorder_level INTEGER NOT NULL,
+    counted_on    DATE    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    po_id        SERIAL PRIMARY KEY,
+    supplier_id  INTEGER        NOT NULL REFERENCES suppliers (supplier_id),
+    ordered_on   DATE           NOT NULL,
+    amount       NUMERIC(12, 2) NOT NULL,
+    status       TEXT           NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS returns (
+    return_id    SERIAL PRIMARY KEY,
+    order_id     INTEGER NOT NULL REFERENCES orders (order_id),
+    product_id   INTEGER NOT NULL REFERENCES products (product_id),
+    returned_on  DATE    NOT NULL,
+    qty          INTEGER NOT NULL,
+    reason       TEXT    NOT NULL
+);
+
+-- closed_on is empty while a ticket is open.
+CREATE TABLE IF NOT EXISTS support_tickets (
+    ticket_id    SERIAL PRIMARY KEY,
+    customer_id  INTEGER NOT NULL REFERENCES customers (customer_id),
+    opened_on    DATE    NOT NULL,
+    closed_on    DATE    NULL,
+    category     TEXT    NOT NULL,
+    priority     TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+    invoice_id   SERIAL PRIMARY KEY,
+    order_id     INTEGER        NOT NULL REFERENCES orders (order_id),
+    issued_on    DATE           NOT NULL,
+    due_on       DATE           NOT NULL,
+    amount       NUMERIC(12, 2) NOT NULL,
+    status       TEXT           NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+    payment_id   SERIAL PRIMARY KEY,
+    invoice_id   INTEGER        NOT NULL REFERENCES invoices (invoice_id),
+    paid_on      DATE           NOT NULL,
+    amount       NUMERIC(12, 2) NOT NULL,
+    method       TEXT           NOT NULL
+);
+
+-- The four columns added to the six original tables. Nullable, so every
+-- existing query and row stays valid, and added here rather than in the
+-- CREATE TABLEs above, so a fresh volume and one bootstrapped before v6.1
+-- take the same path.
+ALTER TABLE orders    ADD COLUMN IF NOT EXISTS employee_id  INTEGER NULL;
+ALTER TABLE products  ADD COLUMN IF NOT EXISTS category_id  INTEGER NULL;
+ALTER TABLE products  ADD COLUMN IF NOT EXISTS supplier_id  INTEGER NULL;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS warehouse_id INTEGER NULL;
+
+-- Their foreign keys. PostgreSQL has no ADD CONSTRAINT IF NOT EXISTS, and a
+-- second run must not add a second copy, so each is added only when
+-- pg_constraint shows no foreign key on that column yet.
+DO $$
+DECLARE
+    fk RECORD;
+BEGIN
+    FOR fk IN
+        SELECT * FROM (VALUES
+            ('orders',    'employee_id',  'employees',  'employee_id'),
+            ('products',  'category_id',  'categories', 'category_id'),
+            ('products',  'supplier_id',  'suppliers',  'supplier_id'),
+            ('shipments', 'warehouse_id', 'warehouses', 'warehouse_id')
+        ) AS added (table_name, column_name, ref_table, ref_column)
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint con
+            JOIN pg_attribute a
+              ON a.attrelid = con.conrelid AND a.attnum = ANY (con.conkey)
+            WHERE con.contype = 'f'
+              AND con.conrelid = format('public.%I', fk.table_name)::regclass
+              AND a.attname = fk.column_name
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE public.%I ADD CONSTRAINT %I '
+                'FOREIGN KEY (%I) REFERENCES public.%I (%I)',
+                fk.table_name, fk.table_name || '_' || fk.column_name || '_fkey',
+                fk.column_name, fk.ref_table, fk.ref_column);
+        END IF;
+    END LOOP;
+END
+$$;
+
 CREATE INDEX IF NOT EXISTS orders_date_idx     ON orders (order_date);
 CREATE INDEX IF NOT EXISTS shipments_date_idx  ON shipments (shipped_on);
 
 -- ------------------------------------------------------------ privileges ----
 -- This block is the point of the file. tests/test_privileges.py asserts every
--- line of it against the running database.
+-- line of it against the running database. Each grant names ALL TABLES, so it
+-- reaches the tables added in v6.1 exactly as it reaches the first six; the
+-- per-column grants of §9.2 replace this policy in a later step.
 
 -- speakql_ro: read the warehouse, write nothing, anywhere.
 GRANT CONNECT ON DATABASE :"dbname" TO speakql_ro;

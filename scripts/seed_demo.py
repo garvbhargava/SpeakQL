@@ -9,7 +9,8 @@ every row is found before it is created.
 Two, because the most important property of this system -- that a question
 runs on the warehouse it was about and on no other -- cannot be demonstrated
 with one. Harbor's data is deliberately different from Northwind's
-(sql/22_second_tenant.sql), so a cross-tenant read would be visible.
+(scripts/seed_warehouse.py generates it from its own seed), so a cross-tenant
+read would be visible.
 
 Uses the application's own modules rather than raw SQL, so the registry this
 writes is exactly the one the API would write -- including the per-connection
@@ -44,15 +45,11 @@ DEMO = [
     },
 ]
 
-# What a viewer may read. Everything else stays private until an owner says
-# otherwise -- defaulting to public would mean a viewer could read a column the
-# day it was added.
-PUBLIC = {
-    "regions": {"region_id", "region_name"},
-    "orders": {"order_id", "order_date", "amount", "customer_id"},
-    "customers": {"customer_id", "region_id"},
-    "shipments": {"shipment_id", "shipped_on", "carrier", "units"},
-}
+# What a viewer may read: the five tables §11.4 flags public, every column of
+# each. Everything else stays private until an owner says otherwise --
+# defaulting to public would mean a viewer could read a column the day it was
+# added.
+PUBLIC_TABLES = ("regions", "categories", "products", "warehouses", "shipments")
 
 
 def main() -> None:
@@ -99,9 +96,7 @@ def main() -> None:
                 for column in session.scalars(select(SchemaColumn).where(
                     SchemaColumn.connection_id == connection.id
                 )):
-                    column.is_public = (
-                        column.column_name in PUBLIC.get(column.table_name, set())
-                    )
+                    column.is_public = column.table_name in PUBLIC_TABLES
 
                 print(f"  {demo['org']:<16} {demo['connection']:<16} "
                       f"-> {demo['database']:<13} {result.summary}")
