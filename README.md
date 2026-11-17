@@ -134,21 +134,22 @@ caught and fixed.
 
 ## Repository layout
 
-Each layer lives in its own branch and its own folder. The root of every branch
-carries this README; each folder carries its own.
+Each part lives in its own branch. `Backend` and `Frontend` keep their code at
+the top of the branch, each with its own README. `Full-Stack` holds both, side
+by side:
 
 ```
-SpeakQL/
-├── backend/            ← Backend branch    · API, database, safety layers, models
+SpeakQL/                (the Full-Stack branch)
+├── backend/            ← the Backend branch    · API, database, safety layers, models
 │   ├── app · api · auth · core · db · logs · sql · ml · scripts · tests
 │   └── README.md
-├── frontend/           ← Frontend branch   · the interface
+├── frontend/           ← the Frontend branch   · the interface
 │   ├── mockup.html         one file, no build, no server
 │   ├── explorations/       the two passes before it
 │   └── README.md
 ├── .gitattributes
 ├── .gitignore
-└── README.md           ← this file — the project overview for every branch
+└── README.md
 ```
 
 ---
@@ -158,8 +159,8 @@ SpeakQL/
 | Branch | Contents | Its README |
 |---|---|---|
 | [`main`](https://github.com/garvbhargava/SpeakQL/tree/main) | This overview | — |
-| [`Backend`](https://github.com/garvbhargava/SpeakQL/tree/Backend) | API, database layer, the four safety layers, model interfaces | [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md) |
-| [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | The interface — every screen, both roles, all five response modes | [`frontend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Frontend/frontend/README.md) |
+| [`Backend`](https://github.com/garvbhargava/SpeakQL/tree/Backend) | API, database layer, the four safety layers, model interfaces | [`README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/README.md) |
+| [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | The interface — every screen, both roles, all five response modes | [`README.md`](https://github.com/garvbhargava/SpeakQL/blob/Frontend/README.md) |
 | [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) | Backend and frontend wired together, one `docker compose up` | root and both folders |
 | [`Documents`](https://github.com/garvbhargava/SpeakQL/tree/Documents) | The specification PDFs; Backend Specification v6.1 is the one to build from | [Documentation](#documentation) |
 
@@ -176,14 +177,14 @@ file:
 
 ```bash
 git clone -b Frontend https://github.com/garvbhargava/SpeakQL.git
-start SpeakQL/frontend/mockup.html      # or `open` on macOS
+start SpeakQL/mockup.html      # or `open` on macOS
 ```
 
 **The backend runs today:**
 
 ```bash
 git clone -b Backend https://github.com/garvbhargava/SpeakQL.git
-cd SpeakQL/backend
+cd SpeakQL
 cp .env.example .env         # then set SECRET_KEY
 make up                      # postgres + api
 make bootstrap               # databases, roles, two tenants on two warehouses
@@ -193,7 +194,7 @@ make demo                    # ask it the demo questions, end to end
 
 Then `http://localhost:8000/docs` for the API, or `http://localhost:8000/health`
 for per-role status and which models are loaded. Full instructions are in
-[`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md).
+[the Backend README](https://github.com/garvbhargava/SpeakQL/blob/Backend/README.md).
 
 Training the two models is one command and runs unattended in a container:
 
@@ -210,7 +211,7 @@ presentation; weeks 8–10 are the end-term.
 
 | Branch | State |
 |---|---|
-| `Backend` | ✅ **Build weeks 1–7 complete, verified on Postgres 15** (built to Revision 5; what moves it to v6.1 is listed in §15.2 of the Backend Specification) — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 218 tests, and both models trained in-house on CPU. Measured numbers in [`backend/README.md`](https://github.com/garvbhargava/SpeakQL/blob/Backend/backend/README.md#the-two-models) |
+| `Backend` | ✅ **Build weeks 1–7 complete, verified on Postgres 15** (built to Revision 5; what moves it to v6.1 is listed in §15.2 of the Backend Specification) — twelve-step pipeline, four safety layers, per-connection tenant engines, 24 routes, 218 tests, and both models trained in-house on CPU. Measured numbers in [the Backend README](https://github.com/garvbhargava/SpeakQL/blob/Backend/README.md#the-two-models) |
 | `Frontend` | ✅ **The approved design, in one file** — eight screens, both roles, all five response modes, a 34-step walkthrough, dark by default. ⏳ The real interface, in React, Vite and Tailwind and connected to the API, is being built from it |
 | `Full-Stack` | ⏳ Once the React interface is connected: the backend and the interface together, one `docker compose up` |
 | `Documents` | ✅ **Backend Specification v6.1** (17 November 2026) and the documents aligned to it |
