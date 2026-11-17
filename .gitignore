@@ -33,3 +33,8 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# frontend
+.env.local
+*.local
+coverage/

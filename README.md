@@ -12,7 +12,7 @@
 [`Backend`](https://github.com/garvbhargava/SpeakQL/tree/Backend) · `Frontend` · [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) · [`main`](https://github.com/garvbhargava/SpeakQL/tree/main)
 
 *This file is the Frontend branch's own README. The project overview for every
-branch is [the README at the root](../README.md).*
+branch is [the README on `main`](https://github.com/garvbhargava/SpeakQL/tree/main).*
 
 </div>
 
@@ -56,10 +56,10 @@ console, and the refusals refuse.
 
 ```bash
 # Windows
-start frontend\mockup.html
+start mockup.html
 
 # macOS / Linux
-open frontend/mockup.html
+open mockup.html
 ```
 
 Then press **Play** on the walkthrough bar, or pick any section from it.
@@ -69,7 +69,7 @@ Then press **Play** on the walkthrough bar, or pick any section from it.
 ## What is in here
 
 ```
-frontend/
+SpeakQL/                 (the Frontend branch)
 ├── mockup.html          the interface — one file, no dependencies
 ├── explorations/        earlier work, kept because it shows the reasoning
 │   ├── design/          the first pass: five separate screens, split CSS and JS
@@ -145,7 +145,7 @@ Frontend Specification's test matrix (§22.9.1):
 python - <<'PY'
 import re
 css = re.search(r'<style>(.*?)</style>',
-                open('frontend/mockup.html', encoding='utf-8').read(), re.S).group(1)
+                open('mockup.html', encoding='utf-8').read(), re.S).group(1)
 blocks = [m.span() for m in re.finditer(r'(:root|\[data-theme="light"\])\s*\{.*?\}', css, re.S)]
 stray = [m.group(0) for m in re.finditer(r'#[0-9a-fA-F]{3,8}\b', css)
          if not any(a <= m.start() < b for a, b in blocks)]
