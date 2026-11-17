@@ -175,7 +175,7 @@ def _on(database: str):
 def test_the_two_tenants_warehouses_answer_differently():
     """If these agreed, a question run on the wrong tenant's warehouse would
     return the right-looking answer and no test could tell. They must differ
-    -- sql/22_second_tenant.sql is what makes them."""
+    -- scripts/seed_warehouse.py generates each from its own seed."""
     answers = {}
     for database in ("northwind_dw", "harbor_dw"):
         engine = _on(database)

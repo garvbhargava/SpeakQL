@@ -81,14 +81,14 @@ PGPASSWORD="$APP_PASSWORD" psql "postgresql://speakql_app@${base_dsn##*@}/speakq
 for db in northwind_dw harbor_dw; do
   say "warehouse $db: schema and privileges"
   psql "$base_dsn/$db" -v dbname="$db" -f "$sql_dir/20_warehouse.sql" >/dev/null
-  say "warehouse $db: seed"
-  psql "$base_dsn/$db" -f "$sql_dir/21_seed.sql" >/dev/null
 done
 
-# The second tenant's data must differ from the first, or a cross-tenant
-# read would return the same answer as a correct one and no test could see it.
-say "warehouse harbor_dw: make its data its own"
-psql "$base_dsn/harbor_dw" -f "$sql_dir/22_second_tenant.sql" >/dev/null
+# Both warehouses' rows, generated (§11.4): each company from its own fixed
+# seed, with one run date -- the database's day -- so the same day always
+# gives the same data. Harbor's names and amounts are its own, so a
+# cross-tenant read would return a visibly wrong answer.
+say "warehouses: generated data"
+python "$here/seed_warehouse.py" seed
 
 # --------------------------------------------------------------- uploads ----
 say "uploads database"
@@ -108,5 +108,11 @@ psql "$base_dsn/speakql_uploads" -c \
 # exactly the one the API would write.
 say "demo organisations and their warehouses"
 python "$here/seed_demo.py"
+
+# ------------------------------------------------------------ guarantees ----
+# Last, so nothing after it can undo what it checked. Stops the bootstrap, with
+# the reason, at the first guarantee of §11.4 that does not hold.
+say "checking the seed guarantees"
+python "$here/seed_warehouse.py" check
 
 say "done. now run: make test-privileges"
