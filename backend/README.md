@@ -36,7 +36,6 @@ branch is [the README at the root](../README.md).*
 - [Project structure](#project-structure)
 - [Roadmap](#roadmap)
 - [Branches](#branches)
-- [Team](#team)
 
 ---
 
@@ -752,21 +751,6 @@ Order and rationale: `SpeakQL Build Plan.pdf` on the `documentation` branch.
 | [`Frontend`](https://github.com/garvbhargava/SpeakQL/tree/Frontend) | The interface |
 | [`Full-Stack`](https://github.com/garvbhargava/SpeakQL/tree/Full-Stack) | Both, wired together |
 | `documentation` | Backend Plan · Complete Logic · Frontend Specification · Build Plan |
-
----
-
-## Team
-
-**Minor Project · MCA (Artificial Intelligence and Machine Learning)**
-School of Computer Science, UPES Dehradun
-
-| Name | Roll |
-|---|---|
-| Garv Bhargava | 590020664 |
-| Dhruv Chhatrawal | 590028180 |
-| Kritant Poudnel | — |
-
-**Mentor:** Mr. Pankaj Dadure
 
 ---
 
