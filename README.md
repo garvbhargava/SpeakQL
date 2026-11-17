@@ -29,7 +29,6 @@ and the validated read-only SQL that produced it.
 - [Quick start](#quick-start)
 - [Status](#status)
 - [Documentation](#documentation)
-- [Team](#team)
 
 ---
 
@@ -239,21 +238,6 @@ Four specification documents, added to the `documentation` branch at the end:
 | **Complete Logic** | How every part of the system decides what it decides, with worked traces |
 | **Frontend Specification** | The design system, every screen, and a 132-case test matrix |
 | **Build Plan** | Weeks 1–7 serialised for one builder, with the critical path and cut order |
-
----
-
-## Team
-
-**Minor Project · MCA (Artificial Intelligence and Machine Learning)**
-School of Computer Science, UPES Dehradun
-
-| Name | Roll |
-|---|---|
-| Garv Bhargava | 590020664 |
-| Dhruv Chhatrawal | 590028180 |
-| Kritant Poudnel | — |
-
-**Mentor:** Mr. Pankaj Dadure
 
 ---
 
