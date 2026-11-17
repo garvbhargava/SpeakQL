@@ -1,0 +1,61 @@
+.seal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--sunk);
+  border-bottom: 1px solid var(--rule);
+  border-left: 2px solid var(--rule2);
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.note {
+  font-size: 12px;
+  color: var(--ink2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink3);
+  white-space: nowrap;
+}
+
+.fact + .fact::before {
+  content: "·";
+  margin-right: 14px;
+  color: var(--rule2);
+}
+
+/* The leading edge is the whole signal. Nothing else on the band is coloured,
+   so a person scanning a thread sees the tone before they read a word. */
+.answer {
+  border-left-color: var(--verified);
+}
+.blocked {
+  border-left-color: var(--blocked);
+}
+.clarify {
+  border-left-color: var(--clarify);
+}
+.refusal {
+  border-left-color: var(--refusal);
+}
+.caution,
+.incomplete {
+  border-left-color: var(--caution);
+}

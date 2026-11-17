@@ -1,0 +1,134 @@
+/* ===================================================================
+   THE TOKENS.  Frontend Specification §3.1 and §3.2.
+
+   This file is the only place in the application where a colour may be
+   written down. Every rule in every CSS module names a token; none of
+   them names a colour — so the whole product turns over on the two
+   blocks below and no component knows which ground it is standing on.
+
+   The rule is checkable, and it is checked:  npm run audit:colour
+   greps every stylesheet outside this file for a hex literal and fails
+   if it finds one. That check is worth more than the fix it replaced.
+   =================================================================== */
+
+:root {
+  /* --- surfaces: ground, the surface things sit on, the recessed one ---
+     On a dark ground the recessed surface is the LIGHTEST of the three,
+     because depth here reads as lift rather than as shadow. */
+  --paper: #0a0e10;
+  --panel: #111719;
+  --sunk: #161d20;
+
+  /* --- ink: primary, secondary, muted --- */
+  --ink: #e9efee;
+  --ink2: #9facaa;
+  --ink3: #687674;
+
+  --rule: #212a2d;
+  --rule2: #2c383b;
+
+  /* --- meaning. never decorative. ---
+     A person should be able to tell a verified number from a proposed one
+     from a refusal without reading a word. */
+  --verified: #3fd68b; /* real, accepted data */
+  --pending: #a78bfa; /* a VALUE proposed but not yet accepted */
+  --awaiting: #e3a55c; /* a PERSON who has not acted yet */
+  --blocked: #ff6e6e; /* the validator refused it */
+  --clarify: #5ca8f2; /* the system is asking back */
+  --refusal: #7c8886; /* the data cannot answer it — deliberately colourless */
+  --caution: #e3a55c; /* low confidence, or an answer short of data */
+  --working: #4a9eff; /* a step in progress. here, now — and out when it lands */
+
+  /* chart series only */
+  --s1: #57a9ff;
+  --s2: #ff9a5c;
+  --s3: #42d9a0;
+
+  /* --- derived: the five values that must know which way the ground faces.
+     Each is a token in its own right so the dependency is declared once
+     instead of being rediscovered in every rule that hits it. --- */
+  --solid: #e9efee; /* an ink-filled surface: primary button, filled chip */
+  --on-solid: #0a0e10; /* and the text that sits on that fill */
+  --ring: rgba(233, 239, 238, 0.09); /* focus halo */
+  --focus-edge: #4a9eff; /* ink is much too loud as a focus border here */
+  --glow: rgba(74, 158, 255, 0.2); /* the halo on whatever is working */
+  --tint: 15%; /* status wash against a surface */
+  --tint2: 26%; /* the heavier wash */
+  --tint-edge: 54%; /* how much a status colour claims of a border */
+  --lift: 0 1px 2px rgba(0, 0, 0, 0.44), 0 10px 30px rgba(0, 0, 0, 0.38);
+  --lift-up: 0 -12px 26px -20px rgba(0, 0, 0, 0.9); /* the composer, lifting off the feed */
+  --sweep: rgba(87, 169, 255, 0.16); /* the light that crosses a working bar */
+  --fade-mask: radial-gradient(ellipse 78% 62% at 50% 42%, #000, transparent 100%);
+
+  /* the one deliberately inverted slab. On a dark ground it stops inverting
+     and becomes a raised surface — a near-white bar across the bottom of a
+     dark console is not emphasis, it is a lamp. */
+  --bar-bg: #161d20;
+  --bar-ink: #e9efee;
+  --bar-line: rgba(233, 239, 238, 0.13);
+  --bar-hover: rgba(233, 239, 238, 0.07);
+  --bar-go: #e9efee;
+  --bar-go-ink: #0a0e10;
+  --bar-go-hover: #ffffff;
+
+  /* --- type (§3.3) --- */
+  --sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* --- layout (§3.4) --- */
+  --nav-w: 246px;
+  --bar-h: 52px;
+  --r: 3px;
+
+  color-scheme: dark;
+}
+
+/* The porcelain console, kept in full as the secondary theme. Same names,
+   same meanings, re-valued for a light ground. */
+[data-theme="light"] {
+  --paper: #edeeec;
+  --panel: #ffffff;
+  --sunk: #f5f6f4;
+  --ink: #14181a;
+  --ink2: #4c5254;
+  --ink3: #7f8683;
+  --rule: #dee1de;
+  --rule2: #c7cbc7;
+
+  --verified: #0e6b4e;
+  --pending: #6242be;
+  --awaiting: #8f5400;
+  --blocked: #af241c;
+  --clarify: #1c5c9e;
+  --refusal: #5a615e;
+  --caution: #8f5400;
+  --working: #1c5c9e;
+
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+
+  --solid: #14181a;
+  --on-solid: #ffffff;
+  --ring: rgba(20, 24, 26, 0.06);
+  --focus-edge: #14181a;
+  --glow: rgba(28, 92, 158, 0.13);
+  --tint: 7%;
+  --tint2: 16%;
+  --tint-edge: 34%;
+  --lift: 0 1px 2px rgba(20, 24, 26, 0.06), 0 10px 30px rgba(20, 24, 26, 0.1);
+  --lift-up: 0 -12px 26px -20px rgba(20, 24, 26, 0.28);
+  --sweep: rgba(42, 120, 214, 0.13);
+
+  --bar-bg: #14181a;
+  --bar-ink: #ffffff;
+  --bar-line: rgba(255, 255, 255, 0.14);
+  --bar-hover: rgba(255, 255, 255, 0.1);
+  --bar-go: #ffffff;
+  --bar-go-ink: #14181a;
+  --bar-go-hover: #e9eae8;
+
+  color-scheme: light;
+}

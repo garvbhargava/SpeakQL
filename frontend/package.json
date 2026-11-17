@@ -1,0 +1,25 @@
+{
+  "name": "speakql-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SpeakQL console — React 18 + Vite. Frontend Specification §24.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit:colour": "node scripts/audit-colour.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}
